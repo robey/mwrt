@@ -1,5 +1,6 @@
 use mwgc::Heap;
 
+mod runtime;
 mod stack_frame;
 
 #[cfg(test)]
