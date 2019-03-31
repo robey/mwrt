@@ -1,6 +1,5 @@
 use mwgc::Heap;
 
-mod code;
 mod constant_pool;
 mod runtime;
 mod stack_frame;
