@@ -1,5 +1,6 @@
 use core::mem;
 use mwgc::Heap;
+use crate::constant_pool::ConstantPool;
 use crate::stack_frame::StackFrame;
 
 
@@ -20,7 +21,9 @@ pub struct RuntimeError<'rom, 'heap> {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Opcode {
-    LoadSlot = 0x10,
+    Break = 0x00,
+    Nop = 0x01,
+    LoadSlot = 0x08,                    // load slot #B from obj A -> A
 }
 
 impl Opcode {
@@ -31,22 +34,38 @@ impl Opcode {
 }
 
 
-pub struct Runtime<'heap> {
+
+
+pub struct Runtime<'rom, 'heap> {
+    constants: ConstantPool<'rom>,
     heap: &'heap mut Heap<'heap>,
 }
 
-impl<'heap> Runtime<'heap> {
-    pub fn execute<'rom>(
+impl<'rom, 'heap> Runtime<'rom, 'heap> {
+    pub fn execute(
         bytecode: &'rom [u8], frame: &'heap mut StackFrame<'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let mut i = 0;
+
+        macro_rules! fail {
+            ($code: expr) => {
+                return Err(RuntimeError { code: $code, bytecode, bytecode_index: i, frame });
+            };
+        }
+
         while i < bytecode.len() {
             match Opcode::from_u8(bytecode[i]) {
+                Opcode::Break => {
+                    // FIXME
+                },
+                Opcode::Nop => {
+                    // nothing
+                },
                 Opcode::LoadSlot => {
 
                 },
                 _ => {
-                    return Err(RuntimeError { code: ErrorCode::UnknownOpcode, bytecode, bytecode_index: i, frame });
+                    fail!(ErrorCode::UnknownOpcode);
                 }
             };
             i += 1;

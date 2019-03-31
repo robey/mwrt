@@ -5,7 +5,10 @@ use mwgc::Heap;
 #[derive(Default)]
 pub struct StackFrame<'heap> {
     pub previous: Option<&'heap StackFrame<'heap>>,
-    metadata: usize,    // local count (u8), and current stack position (u8)
+    // u8: local count
+    // u8: current stack position
+    // u16: current pc
+    metadata: usize,
     // local storage goes here, then the stack slots
 }
 
@@ -36,7 +39,15 @@ impl<'heap> StackFrame<'heap> {
     }
 
     pub fn set_sp(&mut self, sp: usize) {
-        self.metadata = (self.metadata & 0xff) | ((sp & 0xff) << 8);
+        self.metadata = (self.metadata & 0xffff00ff) | ((sp & 0xff) << 8);
+    }
+
+    pub fn get_pc(&self) -> usize {
+        (self.metadata >> 16) & 0xffff
+    }
+
+    pub fn set_pc(&mut self, pc: usize) {
+        self.metadata = (self.metadata & 0xffff) | ((pc & 0xffff) << 16);
     }
 
     pub fn locals(&mut self) -> &'heap mut [usize] {
@@ -106,7 +117,9 @@ mod tests {
         stack[0] = 23;
         stack[1] = 19;
         frame.set_sp(2);
+        frame.set_pc(100);
         assert_eq!(frame.get_sp(), 2);
+        assert_eq!(frame.get_pc(), 100);
         assert_eq!(stack[0], 23);
         assert_eq!(stack[1], 19);
     }
