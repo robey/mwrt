@@ -36,6 +36,7 @@ enum Opcode {
     Break = 0x00,
     Nop = 0x01,
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
+    Unknown = 0xff,
 }
 
 impl Opcode {

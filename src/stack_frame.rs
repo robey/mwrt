@@ -52,7 +52,7 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
 #[cfg(test)]
 mod tests {
     use core::mem;
-    use crate::Heap;
+    use mwgc::Heap;
     use super::{StackFrame};
 
     #[test]
@@ -93,7 +93,6 @@ mod tests {
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
         let frame = StackFrame::allocate(&mut heap, None, 2, 2, &bytecode[..]).unwrap();
-        let locals = frame.locals();
         let stack = frame.stack(&heap);
 
         // make sure we allocated enough memory, and that everything is where we expect.

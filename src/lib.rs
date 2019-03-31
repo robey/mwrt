@@ -1,5 +1,3 @@
-use mwgc::Heap;
-
 mod constant_pool;
 mod runtime;
 mod stack_frame;

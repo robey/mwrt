@@ -30,7 +30,7 @@ pub fn decode_int(bytes: &[u8], mut index: usize) -> Option<DecodedInt> {
     Some(DecodedInt::new(value, index + 1))
 }
 
-pub fn decode_zigzag(bytes: &[u8], mut index: usize) -> Option<DecodedInt> {
+pub fn decode_zigzag(bytes: &[u8], index: usize) -> Option<DecodedInt> {
     decode_int(bytes, index).map(|d| DecodedInt::new((d.value >> 1) ^ -(d.value & 1), d.new_index))
 }
 
