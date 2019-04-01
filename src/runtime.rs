@@ -1,5 +1,5 @@
 use core::mem;
-use mwgc::{Heap, HeapMutRef};
+use mwgc::Heap;
 use crate::constant_pool::ConstantPool;
 use crate::stack_frame::{StackFrame, StackFrameMutRef, StackFrameRef};
 
@@ -70,13 +70,13 @@ impl<'rom> Code<'rom> {
 
 
 
-pub struct Runtime<'rom, 'heap> {
+pub struct Runtime<'runtime, 'rom, 'heap> {
     pool: ConstantPool<'rom>,
-    heap: HeapMutRef<'heap>,
+    heap: &'runtime mut Heap<'heap>,
 }
 
-impl<'rom, 'heap> Runtime<'rom, 'heap> {
-    pub fn new(pool: ConstantPool<'rom>, heap: HeapMutRef<'heap>) -> Runtime<'rom, 'heap> {
+impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
+    pub fn new(pool: ConstantPool<'rom>, heap: &'runtime mut Heap<'heap>) -> Runtime<'runtime, 'rom, 'heap> {
         Runtime { pool, heap }
     }
 
@@ -121,9 +121,12 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             RuntimeError::new(ErrorCode::InvalidCodeObject, prev_frame.take())
         )?;
 
-        let mut frame = StackFrame::allocate(self.heap, prev_frame, code.local_count, code.max_stack, code.bytecode).map_err(|prev| {
-            RuntimeError::new(ErrorCode::OutOfMemory, prev)
+        let mut frame = StackFrame::allocate(self.heap, code.local_count, code.max_stack, code.bytecode).ok_or_else(|| {
+            // exit with error. rust can't figure out that the 2 paths are different, tho, so we must "take".
+            RuntimeError::new(ErrorCode::OutOfMemory, prev_frame.take())
         })?;
+
+        frame.previous = prev_frame;
 
         // FIXME: put args on stack, and count.
         Ok(frame)

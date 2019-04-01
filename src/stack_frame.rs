@@ -24,21 +24,16 @@ const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
     pub fn allocate(
         heap: &mut Heap<'heap>,
-        previous: Option<StackFrameMutRef<'rom, 'heap>>,
         local_count: u8,
         max_stack: u8,
         bytecode: &'rom [u8],
-    ) -> Result<StackFrameMutRef<'rom, 'heap>, Option<StackFrameMutRef<'rom, 'heap>>> {
+    ) -> Option<StackFrameMutRef<'rom, 'heap>> {
         let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
-        match heap.allocate_dynamic_object::<StackFrame>(total) {
-            Some(frame) => {
-                frame.previous = previous;
-                frame.local_count = local_count;
-                frame.bytecode = bytecode;
-                Ok(frame)
-            },
-            None => Err(previous),
-        }
+        heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
+            frame.local_count = local_count;
+            frame.bytecode = bytecode;
+            frame
+        })
     }
 
     pub fn locals(&mut self) -> &'heap mut [usize] {
@@ -66,7 +61,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).ok().unwrap();
+        let frame = StackFrame::allocate(&mut heap, 2, 0, &bytecode[..]).unwrap();
         let locals = frame.locals();
 
         // make sure we allocated enough memory, and that everything is where we expect.
@@ -89,7 +84,7 @@ mod tests {
         let bytecode: [u8; 1] = [ 1 ];
         println!("data {:?}", data.as_ptr());
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).ok().unwrap();
+        let frame = StackFrame::allocate(&mut heap, 2, 0, &bytecode[..]).unwrap();
         frame.locals()[2] = 1;
     }
 
@@ -98,7 +93,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 2, &bytecode[..]).ok().unwrap();
+        let frame = StackFrame::allocate(&mut heap, 2, 2, &bytecode[..]).unwrap();
         let stack = frame.stack(&heap);
 
         // make sure we allocated enough memory, and that everything is where we expect.
