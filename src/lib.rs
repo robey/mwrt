@@ -1,7 +1,7 @@
 mod constant_pool;
+mod decode_int;
 mod runtime;
 mod stack_frame;
-mod zigzag;
 
 pub use runtime::{ErrorCode, Runtime, RuntimeError};
 

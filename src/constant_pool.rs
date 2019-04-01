@@ -1,4 +1,4 @@
-use crate::zigzag::decode_int;
+use crate::decode_int::decode_uint;
 
 pub struct ConstantPool<'rom> {
     data: &'rom [u8],
@@ -19,11 +19,11 @@ impl<'rom> ConstantPool<'rom> {
             index -= 1;
         }
 
-        decode_int(self.data, i).map(|len| { &self.data[len.new_index .. len.new_index + len.value as usize] })
+        decode_uint(self.data, i).map(|len| { &self.data[len.new_index .. len.new_index + len.value as usize] })
     }
 
     fn next(&self, offset: usize) -> Option<usize> {
-        decode_int(self.data, offset).map(|size| size.new_index + (size.value as usize))
+        decode_uint(self.data, offset).map(|size| size.new_index + (size.value as usize))
     }
 }
 
