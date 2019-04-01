@@ -1,7 +1,9 @@
 use core::mem;
-use mwgc::Heap;
+use mwgc::{Heap, HeapMutRef};
 use crate::constant_pool::ConstantPool;
-use crate::stack_frame::StackFrame;
+use crate::stack_frame::{StackFrame, StackFrameMutRef, StackFrameRef};
+
+type RuntimeResult<'rom, 'heap> = Result<usize, RuntimeError<'rom, 'heap>>;
 
 
 pub enum ErrorCode {
@@ -20,11 +22,11 @@ pub enum ErrorCode {
 
 pub struct RuntimeError<'rom, 'heap> {
     pub code: ErrorCode,
-    pub frame: Option<&'heap mut StackFrame<'rom, 'heap>>,
+    pub frame: Option<StackFrameMutRef<'rom, 'heap>>,
 }
 
 impl<'rom, 'heap> RuntimeError<'rom, 'heap> {
-    pub fn new(code: ErrorCode, frame: Option<&'heap mut StackFrame<'rom, 'heap>>) -> RuntimeError<'rom, 'heap> {
+    pub fn new(code: ErrorCode, frame: Option<StackFrameMutRef<'rom, 'heap>>) -> RuntimeError<'rom, 'heap> {
         RuntimeError { code, frame }
     }
 }
@@ -50,6 +52,7 @@ impl Opcode {
 /// format of a code block:
 ///   - u8: # of locals <= 63
 ///   - u8: # of stack slots <= 63
+///   - bytecode
 struct Code<'rom> {
     pub local_count: u8,
     pub max_stack: u8,
@@ -66,24 +69,19 @@ impl<'rom> Code<'rom> {
 }
 
 
+
 pub struct Runtime<'rom, 'heap> {
     pool: ConstantPool<'rom>,
-    heap: &'heap mut Heap<'heap>,
+    heap: HeapMutRef<'heap>,
 }
 
 impl<'rom, 'heap> Runtime<'rom, 'heap> {
-    pub fn new(pool: ConstantPool<'rom>, heap: &'heap mut Heap<'heap>) -> Runtime<'rom, 'heap> {
+    pub fn new(pool: ConstantPool<'rom>, heap: HeapMutRef<'heap>) -> Runtime<'rom, 'heap> {
         Runtime { pool, heap }
     }
 
-    pub fn execute(&mut self, index: usize) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        let code = self.pool.get(index).and_then(|data| Code::from_data(data)).ok_or(
-            RuntimeError::new(ErrorCode::InvalidCodeObject, None)
-        )?;
-
-        let mut frame = StackFrame::allocate(self.heap, None, code.local_count, code.max_stack, code.bytecode).ok_or(
-            RuntimeError::new(ErrorCode::OutOfMemory, None)
-        )?;
+    pub fn execute(&mut self, code_index: usize) -> RuntimeResult<'rom, 'heap> {
+        let mut frame = self.frame_from_code(code_index, None, &[])?;
 
         macro_rules! fail {
             ($code: expr) => {
@@ -111,6 +109,24 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
 
         // got here? nothing to return.
         Ok(0)
+    }
+
+    pub fn frame_from_code(
+        &mut self,
+        code_index: usize,
+        mut prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
+        args: &'heap [usize]
+    ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
+        let code = self.pool.get(code_index).and_then(|data| Code::from_data(data)).ok_or(
+            RuntimeError::new(ErrorCode::InvalidCodeObject, prev_frame.take())
+        )?;
+
+        let mut frame = StackFrame::allocate(self.heap, prev_frame, code.local_count, code.max_stack, code.bytecode).map_err(|prev| {
+            RuntimeError::new(ErrorCode::OutOfMemory, prev)
+        })?;
+
+        // FIXME: put args on stack, and count.
+        Ok(frame)
     }
 
     // pub frame_from_code()

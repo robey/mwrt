@@ -5,7 +5,7 @@ use mwgc::Heap;
 #[derive(Default)]
 #[repr(C)]
 pub struct StackFrame<'rom, 'heap> {
-    pub previous: Option<&'heap StackFrame<'rom, 'heap>>,
+    pub previous: Option<StackFrameMutRef<'rom, 'heap>>,
     // one word for misc:
     pub pc: u16,
     pub sp: u8,
@@ -15,24 +15,30 @@ pub struct StackFrame<'rom, 'heap> {
     // local storage goes here, then the stack slots
 }
 
+pub type StackFrameRef<'rom, 'heap> = &'heap StackFrame<'rom, 'heap>;
+pub type StackFrameMutRef<'rom, 'heap> = &'heap mut StackFrame<'rom, 'heap>;
+
 const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
 
 /// Execution state for a code block: a set of local variables and a "stack" for the expression engine
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
     pub fn allocate(
         heap: &mut Heap<'heap>,
-        previous: Option<&'heap StackFrame<'rom, 'heap>>,
+        previous: Option<StackFrameMutRef<'rom, 'heap>>,
         local_count: u8,
         max_stack: u8,
         bytecode: &'rom [u8],
-    ) -> Option<&'heap mut StackFrame<'rom, 'heap>> {
+    ) -> Result<StackFrameMutRef<'rom, 'heap>, Option<StackFrameMutRef<'rom, 'heap>>> {
         let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
-        heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
-            frame.previous = previous;
-            frame.local_count = local_count;
-            frame.bytecode = bytecode;
-            frame
-        })
+        match heap.allocate_dynamic_object::<StackFrame>(total) {
+            Some(frame) => {
+                frame.previous = previous;
+                frame.local_count = local_count;
+                frame.bytecode = bytecode;
+                Ok(frame)
+            },
+            None => Err(previous),
+        }
     }
 
     pub fn locals(&mut self) -> &'heap mut [usize] {
@@ -60,7 +66,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).ok().unwrap();
         let locals = frame.locals();
 
         // make sure we allocated enough memory, and that everything is where we expect.
@@ -83,7 +89,7 @@ mod tests {
         let bytecode: [u8; 1] = [ 1 ];
         println!("data {:?}", data.as_ptr());
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, None, 2, 0, &bytecode[..]).ok().unwrap();
         frame.locals()[2] = 1;
     }
 
@@ -92,7 +98,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, None, 2, 2, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, None, 2, 2, &bytecode[..]).ok().unwrap();
         let stack = frame.stack(&heap);
 
         // make sure we allocated enough memory, and that everything is where we expect.
