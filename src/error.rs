@@ -1,5 +1,7 @@
+use core::fmt;
 use crate::stack_frame::StackFrameRef;
 
+#[derive(Debug, PartialEq)]
 pub enum ErrorCode {
     // these errors indicate that there's something wrong with your bytecode generator:
     InvalidCodeObject = 1,
@@ -26,6 +28,16 @@ impl<'rom, 'heap> RuntimeError<'rom, 'heap> {
     }
 }
 
+impl<'rom, 'heap> fmt::Debug for RuntimeError<'rom, 'heap> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.code)?;
+        if let Some(frame) = &self.frame {
+            write!(f, " at {:?}", frame)?;
+        }
+        Ok(())
+    }
+}
+
 pub trait ToError<'rom, 'heap> {
-    fn to_error(&mut self, code: ErrorCode) -> RuntimeError<'rom, 'heap>;
+    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap>;
 }

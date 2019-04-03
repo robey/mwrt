@@ -1,4 +1,4 @@
-use core::{mem, slice};
+use core::{fmt, mem, slice};
 use mwgc::Heap;
 
 use crate::error::{ErrorCode, RuntimeError, ToError};
@@ -8,6 +8,7 @@ use crate::error::{ErrorCode, RuntimeError, ToError};
 #[repr(C)]
 pub struct StackFrame<'rom, 'heap> {
     pub previous: Option<StackFrameMutRef<'rom, 'heap>>,
+    pub id: usize,
     // one word for misc:
     pub pc: u16,
     pub sp: u8,
@@ -27,12 +28,14 @@ const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
     pub fn allocate(
         heap: &mut Heap<'heap>,
+        id: usize,
         local_count: u8,
         max_stack: u8,
         bytecode: &'rom [u8],
     ) -> Option<StackFrameMutRef<'rom, 'heap>> {
         let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
         heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
+            frame.id = id;
             frame.local_count = local_count;
             frame.bytecode = bytecode;
             frame
@@ -85,19 +88,29 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
 
 }
 
+impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.id, self.pc, self.sp)?;
+        if let Some(prev) = &self.previous {
+            write!(f, " -> {:?}", prev)?;
+        }
+        Ok(())
+    }
+}
+
 impl<'rom, 'heap> ToError<'rom, 'heap> for StackFrame<'rom, 'heap> {
     // evil trickery:
     // we "know" this is only called to create an error object and will soon
     // become the only heap reference, but rust can't know that.
-    fn to_error(&mut self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
+    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
         let frozen = unsafe { &*(self as *const StackFrame) };
         RuntimeError::new(code, Some(frozen))
     }
 }
 
 impl<'rom, 'heap> ToError<'rom, 'heap> for Option<StackFrameMutRef<'rom, 'heap>> {
-    fn to_error(&mut self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
-        let frozen = self.take().map(|f| unsafe { &*(f as *const StackFrame) });
+    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
+        let frozen = self.as_ref().map(|f| unsafe { &*(*f as *const StackFrame) });
         RuntimeError::new(code, frozen)
     }
 }
@@ -114,7 +127,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 0, &bytecode[..]).unwrap();
         let locals = frame.locals();
 
         // make sure we allocated enough memory, and that everything is where we expect.
@@ -137,7 +150,7 @@ mod tests {
         let bytecode: [u8; 1] = [ 1 ];
         println!("data {:?}", data.as_ptr());
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 0, &bytecode[..]).unwrap();
         frame.locals()[2] = 1;
     }
 
@@ -146,7 +159,7 @@ mod tests {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 2, 2, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 2, &bytecode[..]).unwrap();
         let stack = frame.stack(&heap);
 
         // make sure we allocated enough memory, and that everything is where we expect.
