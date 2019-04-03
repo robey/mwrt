@@ -1,6 +1,8 @@
 use core::{mem, slice};
 use mwgc::Heap;
 
+use crate::error::{ErrorCode, RuntimeError, ToError};
+
 // actually dynamically sized.
 #[derive(Default)]
 #[repr(C)]
@@ -19,6 +21,7 @@ pub type StackFrameRef<'rom, 'heap> = &'heap StackFrame<'rom, 'heap>;
 pub type StackFrameMutRef<'rom, 'heap> = &'heap mut StackFrame<'rom, 'heap>;
 
 const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
+
 
 /// Execution state for a code block: a set of local variables and a "stack" for the expression engine
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
@@ -41,11 +44,61 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         unsafe { slice::from_raw_parts_mut(base.offset(FRAME_HEADER_WORDS), self.local_count as usize) }
     }
 
-    pub fn stack(&mut self, heap: &'heap Heap<'heap>) -> &'heap mut [usize] {
+    pub fn stack(&mut self, heap: &Heap<'heap>) -> &'heap mut [usize] {
         let base = self as *mut StackFrame as *mut usize;
         let size = heap.size_of(self) / mem::size_of::<usize>();
         let offset = FRAME_HEADER_WORDS + (self.local_count as isize);
         unsafe { slice::from_raw_parts_mut(base.offset(offset), size - (offset as usize)) }
+    }
+
+    // pub fn put(&mut self, heap: &mut Heap<'heap>, items: &[usize]) -> bool {
+    //     let stack = self.stack(heap);
+    //     if (self.sp as usize) + items.len() > stack.len() { return false }
+    //     for x in items {
+    //         stack[self.sp as usize] = *x;
+    //         self.sp += 1;
+    //     }
+    //     true
+    // }
+
+    // pub fn put_one(&mut self, heap: &mut Heap<'heap>, item: usize) -> bool {
+    //     self.put(heap, &[ item ])
+    // }
+
+    pub fn start_locals(&mut self, values: &[usize]) -> Result<(), RuntimeError<'rom, 'heap>> {
+        let locals = self.locals();
+        if values.len() > locals.len() {
+            return Err(self.to_error(ErrorCode::LocalsOverflow));
+        }
+        for i in 0..values.len() { locals[i] = values[i] }
+        Ok(())
+    }
+
+    pub fn put_local(&mut self, n: usize, value: usize) -> Result<(), ErrorCode> {
+        let locals = self.locals();
+        if n >= locals.len() {
+            return Err(ErrorCode::LocalsOverflow);
+        }
+        locals[n] = value;
+        Ok(())
+    }
+
+}
+
+impl<'rom, 'heap> ToError<'rom, 'heap> for StackFrame<'rom, 'heap> {
+    // evil trickery:
+    // we "know" this is only called to create an error object and will soon
+    // become the only heap reference, but rust can't know that.
+    fn to_error(&mut self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
+        let frozen = unsafe { &*(self as *const StackFrame) };
+        RuntimeError::new(code, Some(frozen))
+    }
+}
+
+impl<'rom, 'heap> ToError<'rom, 'heap> for Option<StackFrameMutRef<'rom, 'heap>> {
+    fn to_error(&mut self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
+        let frozen = self.take().map(|f| unsafe { &*(f as *const StackFrame) });
+        RuntimeError::new(code, frozen)
     }
 }
 

@@ -1,35 +1,9 @@
 use core::mem;
 use mwgc::Heap;
+
 use crate::constant_pool::ConstantPool;
-use crate::stack_frame::{StackFrame, StackFrameMutRef, StackFrameRef};
-
-type RuntimeResult<'rom, 'heap> = Result<usize, RuntimeError<'rom, 'heap>>;
-
-
-pub enum ErrorCode {
-    // these errors indicate that there's something wrong with your bytecode generator:
-    InvalidCodeObject = 1,
-    UnknownOpcode,
-    StackUnderflow,
-    StackOverflow,
-
-    // these errors are resource constraints:
-    OutOfMemory,
-
-    // these errors were invoked by your code object intentionally:
-    Break,
-}
-
-pub struct RuntimeError<'rom, 'heap> {
-    pub code: ErrorCode,
-    pub frame: Option<StackFrameMutRef<'rom, 'heap>>,
-}
-
-impl<'rom, 'heap> RuntimeError<'rom, 'heap> {
-    pub fn new(code: ErrorCode, frame: Option<StackFrameMutRef<'rom, 'heap>>) -> RuntimeError<'rom, 'heap> {
-        RuntimeError { code, frame }
-    }
-}
+use crate::error::{ErrorCode, RuntimeError, ToError};
+use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
 #[repr(u8)]
@@ -69,7 +43,6 @@ impl<'rom> Code<'rom> {
 }
 
 
-
 pub struct Runtime<'runtime, 'rom, 'heap> {
     pool: ConstantPool<'rom>,
     heap: &'runtime mut Heap<'heap>,
@@ -80,12 +53,12 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
         Runtime { pool, heap }
     }
 
-    pub fn execute(&mut self, code_index: usize) -> RuntimeResult<'rom, 'heap> {
+    pub fn execute(&mut self, code_index: usize) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let mut frame = self.frame_from_code(code_index, None, &[])?;
 
         macro_rules! fail {
             ($code: expr) => {
-                return Err(RuntimeError::new($code, Some(frame)));
+                return Err(frame.to_error($code));
             };
         }
 
@@ -115,24 +88,17 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
         &mut self,
         code_index: usize,
         mut prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
-        args: &'heap [usize]
+        args: &[usize]
     ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
         let code = self.pool.get(code_index).and_then(|data| Code::from_data(data)).ok_or(
-            RuntimeError::new(ErrorCode::InvalidCodeObject, prev_frame.take())
+            prev_frame.to_error(ErrorCode::InvalidCodeObject)
         )?;
 
-        let mut frame = StackFrame::allocate(self.heap, code.local_count, code.max_stack, code.bytecode).ok_or_else(|| {
-            // exit with error. rust can't figure out that the 2 paths are different, tho, so we must "take".
-            RuntimeError::new(ErrorCode::OutOfMemory, prev_frame.take())
-        })?;
+        let mut frame = StackFrame::allocate(self.heap, code.local_count, code.max_stack, code.bytecode).ok_or(
+            prev_frame.to_error(ErrorCode::OutOfMemory)
+        )?;
 
         frame.previous = prev_frame;
-
-        // FIXME: put args on stack, and count.
-        Ok(frame)
+        frame.start_locals(args).map(|_| frame)
     }
-
-    // pub frame_from_code()
-
-    // fn error(code: ErrorCode, )
 }

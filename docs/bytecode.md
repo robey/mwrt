@@ -29,7 +29,7 @@
 
 - all ints are encoded as either varint (unsigned) or zigzag (signed)
 - format:
-    - u32: magic = xx xx xx xx
+    - u32: magic = F0 9F 97 BF
     - u8: version = 0
     - uint: index of "main" function in constant pool
     - u8[...]: constant pool
@@ -102,14 +102,13 @@
     - new (size, fill byte)
     - length
     - compare
-    - concat
+    - ~concat~ (new, copy, copy)
     - index of
     - last index of
-    - slice
+    - ~slice~ (new, copy)
     - b[x] get
-    - mutable?
-        - b[x] set (mutable get)
-        - copy (mutable slice)
-        - fill (mutable new)
+    - b[x] set
+    - copy b[i..j] into c[k]
+    - fill b[i..j] with x
 - strings
 - infinite ints

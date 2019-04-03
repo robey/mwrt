@@ -1,9 +1,11 @@
 mod constant_pool;
 mod decode_int;
+mod error;
 mod runtime;
 mod stack_frame;
 
-pub use runtime::{ErrorCode, Runtime, RuntimeError};
+pub use error::{ErrorCode};
+pub use runtime::{Runtime};
 
 #[cfg(test)]
 mod tests {
