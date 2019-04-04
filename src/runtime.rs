@@ -2,6 +2,7 @@ use core::mem;
 use mwgc::Heap;
 
 use crate::constant_pool::ConstantPool;
+use crate::decode_int::decode_sint;
 use crate::error::{ErrorCode, RuntimeError, ToError};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
@@ -16,6 +17,11 @@ enum Opcode {
     Immediate = 0x10,                   // N1 -> S1
     Unknown = 0xff,
 }
+
+// opcodes 0x1X have one immediate; 0x2X have two
+const FIRST_N1_OPCODE: u8 = 0x10;
+const FIRST_N2_OPCODE: u8 = 0x20;
+const LAST_N_OPCODE: u8 = 0x30;
 
 impl Opcode {
     // why isn't this automatic or derivable?
@@ -93,7 +99,23 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
         let instruction = frame.bytecode[next_pc];
         next_pc += 1;
 
+        // immediates?
+        let mut n1: isize = 0;
+        let mut n2: isize = 0;
+        if instruction >= FIRST_N1_OPCODE && instruction < LAST_N_OPCODE {
+            let d1 = decode_sint(frame.bytecode, next_pc).ok_or_else(|| frame.to_error(ErrorCode::TruncatedCode))?;
+            n1 = d1.value;
+            next_pc = d1.new_index;
+            if instruction >= FIRST_N2_OPCODE {
+                let d2 = decode_sint(frame.bytecode, next_pc).ok_or_else(|| frame.to_error(ErrorCode::TruncatedCode))?;
+                n2 = d2.value;
+                next_pc = d2.new_index;
+            }
+        }
+
         match Opcode::from_u8(instruction) {
+            // zero immediates:
+
             Opcode::Break => {
                 return Err(frame.to_error(ErrorCode::Break));
             },
@@ -103,6 +125,12 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
             Opcode::Return => {
                 let count = frame.get(self.heap)?;
                 return Ok(Disposition::Return(count));
+            },
+
+            // one immediate:
+
+            Opcode::Immediate => {
+                frame.put(n1 as usize, self.heap)?;
             },
 
             Opcode::LoadSlot => {
@@ -186,5 +214,19 @@ mod tests {
 
         let mut results: [usize; 1] = [ 0 ];
         assert_eq!(format!("{:?}", runtime.execute(0, &[], &mut results)), "Err(Break at [frame code=0 pc=1 sp=0])");
+    }
+
+    #[test]
+    fn immediate_and_return() {
+        let mut data: [u8; 256] = [0; 256];
+        let mut heap = Heap::from_bytes(&mut data);
+        let pool = ConstantPool::new(&[
+            8, 1, 2, Opcode::Immediate as u8, 0x80, 2, Opcode::Immediate as u8, 2, Opcode::Return as u8
+        ]);
+        let mut runtime = Runtime::new(pool, &mut heap);
+
+        let mut results: [usize; 1] = [ 0 ];
+        assert_eq!(runtime.execute(0, &[], &mut results).ok(), Some(1));
+        assert_eq!(results[0], 128);
     }
 }

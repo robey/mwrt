@@ -47,6 +47,11 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         unsafe { slice::from_raw_parts_mut(base.offset(FRAME_HEADER_WORDS), self.local_count as usize) }
     }
 
+    pub fn locals_read(&self) -> &'heap [usize] {
+        let base = self as *const StackFrame as *const usize;
+        unsafe { slice::from_raw_parts(base.offset(FRAME_HEADER_WORDS), self.local_count as usize) }
+    }
+
     pub fn stack(&mut self, heap: &Heap<'heap>) -> &'heap mut [usize] {
         let base = self as *mut StackFrame as *mut usize;
         let size = heap.size_of(self) / mem::size_of::<usize>();
@@ -54,13 +59,19 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         unsafe { slice::from_raw_parts_mut(base.offset(offset), size - (offset as usize)) }
     }
 
+    pub fn stack_read(&self) -> &'heap [usize] {
+        let base = self as *const StackFrame as *const usize;
+        let offset = FRAME_HEADER_WORDS + (self.local_count as isize);
+        unsafe { slice::from_raw_parts(base.offset(offset), self.sp as usize) }
+    }
+
     // the last N things added to the stack
     pub fn stack_from(
-        &mut self, n: usize, heap: &Heap<'heap>
+        &mut self, index: usize, heap: &Heap<'heap>
     ) -> Result<&'heap mut [usize], RuntimeError<'rom, 'heap>> {
         let stack = self.stack(heap);
-        if n > (self.sp as usize) { return Err(self.to_error(ErrorCode::StackUnderflow)) }
-        Ok(&mut stack[(self.sp as usize) - n ..])
+        if index > (self.sp as usize) { return Err(self.to_error(ErrorCode::StackUnderflow)) }
+        Ok(&mut stack[(self.sp as usize) - index ..])
     }
 
     pub fn get(&mut self, heap: &mut Heap<'heap>) -> Result<usize, RuntimeError<'rom, 'heap>> {
@@ -68,6 +79,14 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         if self.sp < 1 { return Err(self.to_error(ErrorCode::StackUnderflow)) }
         self.sp -= 1;
         Ok(stack[self.sp as usize])
+    }
+
+    pub fn put(&mut self, n: usize, heap: &mut Heap<'heap>) -> Result<(), RuntimeError<'rom, 'heap>> {
+        let stack = self.stack(heap);
+        if (self.sp as usize) >= stack.len() { return Err(self.to_error(ErrorCode::StackOverflow)) }
+        stack[self.sp as usize] = n;
+        self.sp += 1;
+        Ok(())
     }
 
     // pub fn put(&mut self, heap: &mut Heap<'heap>, items: &[usize]) -> bool {
@@ -107,6 +126,13 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
 impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.id, self.pc, self.sp)?;
+        if f.alternate() {
+            write!(f, "{}", " L={ ")?;
+            for i in self.locals_read() { write!(f, "x{:x} ", i)?; }
+            write!(f, "{}", "} S={ ")?;
+            for i in self.stack_read() { write!(f, "x{:x} ", i)?; }
+            write!(f, "{}", "}")?;
+        }
         if let Some(prev) = &self.previous {
             write!(f, " -> {:?}", prev)?;
         }

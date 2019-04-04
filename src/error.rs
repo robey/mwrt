@@ -6,6 +6,7 @@ pub enum ErrorCode {
     // these errors indicate that there's something wrong with your bytecode generator:
     InvalidCodeObject = 1,
     UnknownOpcode,
+    TruncatedCode,
     StackUnderflow,
     StackOverflow,
     LocalsOverflow,
@@ -32,7 +33,11 @@ impl<'rom, 'heap> fmt::Debug for RuntimeError<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.code)?;
         if let Some(frame) = &self.frame {
-            write!(f, " at {:?}", frame)?;
+            if f.alternate() {
+                write!(f, " at {:#?}", frame)?;
+            } else {
+                write!(f, " at {:?}", frame)?;
+            }
         }
         Ok(())
     }
