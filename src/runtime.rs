@@ -136,9 +136,7 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
 mod tests {
     use mwgc::Heap;
     use crate::constant_pool::ConstantPool;
-
-    use core::mem;
-    use super::{Runtime};
+    use super::{Opcode, Runtime};
 
     #[test]
     fn unknown() {
@@ -148,5 +146,25 @@ mod tests {
         let pool = ConstantPool::new(&[ 3, 1, 1, 0xff ]);
         let mut runtime = Runtime::new(pool, &mut heap);
         assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(UnknownOpcode at [frame code=0 pc=0 sp=0])");
+    }
+
+    #[test]
+    fn break_instruction() {
+        let mut data: [u8; 256] = [0; 256];
+        let mut heap = Heap::from_bytes(&mut data);
+        let pool = ConstantPool::new(&[ 3, 1, 1, Opcode::Break as u8 ]);
+        let mut runtime = Runtime::new(pool, &mut heap);
+
+        assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(Break at [frame code=0 pc=0 sp=0])");
+    }
+
+    #[test]
+    fn skip_nop() {
+        let mut data: [u8; 256] = [0; 256];
+        let mut heap = Heap::from_bytes(&mut data);
+        let pool = ConstantPool::new(&[ 4, 1, 1, Opcode::Nop as u8, Opcode::Break as u8 ]);
+        let mut runtime = Runtime::new(pool, &mut heap);
+
+        assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(Break at [frame code=0 pc=1 sp=0])");
     }
 }
