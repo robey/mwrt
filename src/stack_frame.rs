@@ -54,6 +54,22 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         unsafe { slice::from_raw_parts_mut(base.offset(offset), size - (offset as usize)) }
     }
 
+    // the last N things added to the stack
+    pub fn stack_from(
+        &mut self, n: usize, heap: &Heap<'heap>
+    ) -> Result<&'heap mut [usize], RuntimeError<'rom, 'heap>> {
+        let stack = self.stack(heap);
+        if n > (self.sp as usize) { return Err(self.to_error(ErrorCode::StackUnderflow)) }
+        Ok(&mut stack[(self.sp as usize) - n ..])
+    }
+
+    pub fn get(&mut self, heap: &mut Heap<'heap>) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        let stack = self.stack(heap);
+        if self.sp < 1 { return Err(self.to_error(ErrorCode::StackUnderflow)) }
+        self.sp -= 1;
+        Ok(stack[self.sp as usize])
+    }
+
     // pub fn put(&mut self, heap: &mut Heap<'heap>, items: &[usize]) -> bool {
     //     let stack = self.stack(heap);
     //     if (self.sp as usize) + items.len() > stack.len() { return false }

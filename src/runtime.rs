@@ -11,7 +11,9 @@ use crate::stack_frame::{StackFrame, StackFrameMutRef};
 enum Opcode {
     Break = 0x00,
     Nop = 0x01,
+    Return = 0x02,
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
+    Immediate = 0x10,                   // N1 -> S1
     Unknown = 0xff,
 }
 
@@ -24,10 +26,10 @@ impl Opcode {
 
 
 // what to do after executing a bytecode
-enum Disposition<'rom, 'heap> {
+enum Disposition {
     Continue(u16),  // keep going, possibly across a jump
     End,            // ran out of bytes
-    Error(RuntimeError<'rom, 'heap>),
+    Return(usize),
 }
 
 
@@ -61,39 +63,46 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
         Runtime { pool, heap }
     }
 
-    pub fn execute(&mut self, code_index: usize, args: &[usize]) -> Result<usize, RuntimeError<'rom, 'heap>> {
+    pub fn execute(
+        &mut self, code_index: usize, args: &[usize], results: &mut [usize]
+    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let frame = self.frame_from_code(code_index, None, args)?;
         loop {
-            let d = self.execute_one(frame);
+            let d = self.execute_one(frame)?;
             match d {
                 Disposition::Continue(next_pc) => {
                     frame.pc = next_pc;
                 },
                 Disposition::End => {
-                    // got here? nothing to return.
+                    // ran out of bytecodes? nothing to return.
                     return Ok(0);
                 },
-                Disposition::Error(err) => {
-                    return Err(err);
+                Disposition::Return(count) => {
+                    let stack_results = frame.stack_from(count, self.heap)?;
+                    let n: usize = if count < results.len() { count } else { results.len() };
+                    for i in 0 .. n { results[i] = stack_results[i] }
+                    return Ok(count);
                 }
             }
         }
     }
 
-    fn execute_one(&mut self, frame: &StackFrame<'rom, 'heap>) -> Disposition<'rom, 'heap> {
+    fn execute_one(&mut self, frame: &mut StackFrame<'rom, 'heap>) -> Result<Disposition, RuntimeError<'rom, 'heap>> {
         let mut next_pc = frame.pc as usize;
-        if next_pc >= frame.bytecode.len() { return Disposition::End }
+        if next_pc >= frame.bytecode.len() { return Ok(Disposition::End) }
         let instruction = frame.bytecode[next_pc];
         next_pc += 1;
 
-        // FIXME: read args
-
         match Opcode::from_u8(instruction) {
             Opcode::Break => {
-                return Disposition::Error(frame.to_error(ErrorCode::Break));
+                return Err(frame.to_error(ErrorCode::Break));
             },
             Opcode::Nop => {
                 // nothing
+            },
+            Opcode::Return => {
+                let count = frame.get(self.heap)?;
+                return Ok(Disposition::Return(count));
             },
 
             Opcode::LoadSlot => {
@@ -101,11 +110,11 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
             },
 
             _ => {
-                return Disposition::Error(frame.to_error(ErrorCode::UnknownOpcode));
+                return Err(frame.to_error(ErrorCode::UnknownOpcode));
             }
         }
 
-        Disposition::Continue(next_pc as u16)
+        Ok(Disposition::Continue(next_pc as u16))
     }
 
     // look up a code object in the constant pool, allocate a new stack frame
@@ -132,6 +141,10 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
 }
 
 
+//
+// ----- tests
+//
+
 #[cfg(test)]
 mod tests {
     use mwgc::Heap;
@@ -145,7 +158,12 @@ mod tests {
         // constant pool: 1 code block of "unknown" (ff)
         let pool = ConstantPool::new(&[ 3, 1, 1, 0xff ]);
         let mut runtime = Runtime::new(pool, &mut heap);
-        assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(UnknownOpcode at [frame code=0 pc=0 sp=0])");
+
+        let mut results: [usize; 1] = [ 0 ];
+        assert_eq!(
+            format!("{:?}", runtime.execute(0, &[], &mut results)),
+            "Err(UnknownOpcode at [frame code=0 pc=0 sp=0])"
+        );
     }
 
     #[test]
@@ -155,7 +173,8 @@ mod tests {
         let pool = ConstantPool::new(&[ 3, 1, 1, Opcode::Break as u8 ]);
         let mut runtime = Runtime::new(pool, &mut heap);
 
-        assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(Break at [frame code=0 pc=0 sp=0])");
+        let mut results: [usize; 1] = [ 0 ];
+        assert_eq!(format!("{:?}", runtime.execute(0, &[], &mut results)), "Err(Break at [frame code=0 pc=0 sp=0])");
     }
 
     #[test]
@@ -165,6 +184,7 @@ mod tests {
         let pool = ConstantPool::new(&[ 4, 1, 1, Opcode::Nop as u8, Opcode::Break as u8 ]);
         let mut runtime = Runtime::new(pool, &mut heap);
 
-        assert_eq!(format!("{:?}", runtime.execute(0, &[])), "Err(Break at [frame code=0 pc=1 sp=0])");
+        let mut results: [usize; 1] = [ 0 ];
+        assert_eq!(format!("{:?}", runtime.execute(0, &[], &mut results)), "Err(Break at [frame code=0 pc=1 sp=0])");
     }
 }
