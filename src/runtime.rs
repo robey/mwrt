@@ -9,7 +9,7 @@ use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Opcode {
+pub enum Opcode {
     Break = 0x00,
     Nop = 0x01,
     Return = 0x02,
@@ -59,14 +59,14 @@ impl<'rom> Code<'rom> {
 }
 
 
-pub struct Runtime<'runtime, 'rom, 'heap> {
+pub struct Runtime<'rom, 'heap> {
     pool: ConstantPool<'rom>,
-    heap: &'runtime mut Heap<'heap>,
+    heap: Heap<'heap>,
 }
 
-impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
-    pub fn new(pool: ConstantPool<'rom>, heap: &'runtime mut Heap<'heap>) -> Runtime<'runtime, 'rom, 'heap> {
-        Runtime { pool, heap }
+impl<'rom, 'heap> Runtime<'rom, 'heap> {
+    pub fn new(pool: ConstantPool<'rom>, heap_data: &'heap mut [u8]) -> Runtime<'rom, 'heap> {
+        Runtime { pool, heap: Heap::from_bytes(heap_data) }
     }
 
     pub fn execute(
@@ -84,7 +84,7 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
                     return Ok(0);
                 },
                 Disposition::Return(count) => {
-                    let stack_results = frame.stack_from(count, self.heap)?;
+                    let stack_results = frame.stack_from(count, &self.heap)?;
                     let n: usize = if count < results.len() { count } else { results.len() };
                     for i in 0 .. n { results[i] = stack_results[i] }
                     return Ok(count);
@@ -123,14 +123,14 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
                 // nothing
             },
             Opcode::Return => {
-                let count = frame.get(self.heap)?;
+                let count = frame.get(&mut self.heap)?;
                 return Ok(Disposition::Return(count));
             },
 
             // one immediate:
 
             Opcode::Immediate => {
-                frame.put(n1 as usize, self.heap)?;
+                frame.put(n1 as usize, &mut self.heap)?;
             },
 
             Opcode::LoadSlot => {
@@ -158,75 +158,12 @@ impl<'runtime, 'rom, 'heap> Runtime<'runtime, 'rom, 'heap> {
         )?;
 
         let mut frame = StackFrame::allocate(
-            self.heap, code_index, code.local_count, code.max_stack, code.bytecode
+            &mut self.heap, code_index, code.local_count, code.max_stack, code.bytecode
         ).ok_or(
             prev_frame.to_error(ErrorCode::OutOfMemory)
         )?;
 
         frame.previous = prev_frame;
         frame.start_locals(args).map(|_| frame)
-    }
-}
-
-
-//
-// ----- tests
-//
-
-#[cfg(test)]
-mod tests {
-    use mwgc::Heap;
-    use crate::constant_pool::ConstantPool;
-    use super::{Opcode, Runtime};
-
-    #[test]
-    fn unknown() {
-        let mut data: [u8; 256] = [0; 256];
-        let mut heap = Heap::from_bytes(&mut data);
-        // constant pool: 1 code block of "unknown" (ff)
-        let pool = ConstantPool::new(&[ 3, 1, 1, 0xff ]);
-        let mut runtime = Runtime::new(pool, &mut heap);
-
-        let mut results: [usize; 1] = [ 0 ];
-        assert_eq!(
-            format!("{:?}", runtime.execute(0, &[], &mut results)),
-            "Err(UnknownOpcode at [frame code=0 pc=0 sp=0])"
-        );
-    }
-
-    #[test]
-    fn break_instruction() {
-        let mut data: [u8; 256] = [0; 256];
-        let mut heap = Heap::from_bytes(&mut data);
-        let pool = ConstantPool::new(&[ 3, 1, 1, Opcode::Break as u8 ]);
-        let mut runtime = Runtime::new(pool, &mut heap);
-
-        let mut results: [usize; 1] = [ 0 ];
-        assert_eq!(format!("{:?}", runtime.execute(0, &[], &mut results)), "Err(Break at [frame code=0 pc=0 sp=0])");
-    }
-
-    #[test]
-    fn skip_nop() {
-        let mut data: [u8; 256] = [0; 256];
-        let mut heap = Heap::from_bytes(&mut data);
-        let pool = ConstantPool::new(&[ 4, 1, 1, Opcode::Nop as u8, Opcode::Break as u8 ]);
-        let mut runtime = Runtime::new(pool, &mut heap);
-
-        let mut results: [usize; 1] = [ 0 ];
-        assert_eq!(format!("{:?}", runtime.execute(0, &[], &mut results)), "Err(Break at [frame code=0 pc=1 sp=0])");
-    }
-
-    #[test]
-    fn immediate_and_return() {
-        let mut data: [u8; 256] = [0; 256];
-        let mut heap = Heap::from_bytes(&mut data);
-        let pool = ConstantPool::new(&[
-            8, 1, 2, Opcode::Immediate as u8, 0x80, 2, Opcode::Immediate as u8, 2, Opcode::Return as u8
-        ]);
-        let mut runtime = Runtime::new(pool, &mut heap);
-
-        let mut results: [usize; 1] = [ 0 ];
-        assert_eq!(runtime.execute(0, &[], &mut results).ok(), Some(1));
-        assert_eq!(results[0], 128);
     }
 }
