@@ -6,7 +6,9 @@ use helpers::{Bytes, Platform};
 const NOP: &[u8] = &[ Opcode::Nop as u8 ];
 const PUSH_128: &[u8] = &[ Opcode::Immediate as u8, 0x80, 2 ];
 const PUSH_1: &[u8] = &[ Opcode::Immediate as u8, 2 ];
+const PUSH_CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
 const RETURN: &[u8] = &[ Opcode::Return as u8 ];
+const SLOT_0: &[u8] = &[ Opcode::LoadSlotN as u8, 0 ];
 
 
 #[test]
@@ -42,5 +44,13 @@ fn skip_nop() {
 #[test]
 fn immediate_and_return() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_1, RETURN ]) ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(128))
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+}
+
+#[test]
+fn constant_and_return() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_CONST_1, SLOT_0, PUSH_1, RETURN ]), Bytes::constant(300) ]);
+    println!("{:?}", p.to_runtime());
+    println!("{:?}", p.execute1(0, &[]));
+    assert_eq!(p.execute1(0, &[]).ok(), Some(300));
 }

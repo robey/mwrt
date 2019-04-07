@@ -5,6 +5,8 @@ use crate::stack_frame::StackFrameRef;
 pub enum ErrorCode {
     // these errors indicate that there's something wrong with your bytecode generator:
     InvalidCodeObject = 1,
+    InvalidConstant,
+    InvalidAddress,
     UnknownOpcode,
     TruncatedCode,
     StackUnderflow,

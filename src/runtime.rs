@@ -1,8 +1,8 @@
-use core::mem;
+use core::{fmt, mem};
 use mwgc::Heap;
 
 use crate::constant_pool::ConstantPool;
-use crate::decode_int::decode_sint;
+use crate::decode_int::{decode_sint, decode_unaligned};
 use crate::error::{ErrorCode, RuntimeError, ToError};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
@@ -15,6 +15,8 @@ pub enum Opcode {
     Return = 0x02,
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
     Immediate = 0x10,                   // N1 -> S1
+    Constant = 0x11,                    // addr(constant N1) -> S1,
+    LoadSlotN = 0x12,                   // S1[N1] -> S1
     Unknown = 0xff,
 }
 
@@ -132,6 +134,13 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             Opcode::Immediate => {
                 frame.put(n1 as usize, &mut self.heap)?;
             },
+            Opcode::Constant => {
+                frame.put(((n1 as usize) << 1) | 1, &mut self.heap)?;
+            },
+            Opcode::LoadSlotN => {
+                let v = self.load_slot(frame.get(&self.heap)?, n1 as usize, frame)?;
+                frame.put(v, &mut self.heap)?;
+            },
 
             Opcode::LoadSlot => {
 
@@ -165,5 +174,36 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
 
         frame.previous = prev_frame;
         frame.start_locals(args).map(|_| frame)
+    }
+
+    pub fn load_slot(
+        &self,
+        addr: usize,
+        slot: usize,
+        frame: &StackFrame<'rom, 'heap>
+    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        if addr & 1 != 0 {
+            // constant pool address
+            let obj = self.pool.get(addr >> 1).ok_or_else(|| frame.to_error(ErrorCode::InvalidConstant))?;
+            let offset = slot * mem::size_of::<usize>();
+            decode_unaligned(obj, offset).map(|x| x.value as usize).ok_or_else(|| {
+                frame.to_error(ErrorCode::InvalidAddress)
+            })
+        } else {
+            // heap address, should be aligned
+            let slot_addr = addr + slot * mem::size_of::<usize>();
+            let slot_ref = unsafe { &*(slot_addr as *const usize) };
+            if slot_addr % mem::size_of::<usize>() != 0 || !self.heap.is_inside(slot_ref) {
+                return Err(frame.to_error(ErrorCode::InvalidAddress));
+            }
+            Ok(*slot_ref)
+        }
+    }
+}
+
+
+impl<'rom, 'heap> fmt::Debug for Runtime<'rom, 'heap> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Runtime(pool={:?}, heap={:?})", self.pool, self.heap)
     }
 }

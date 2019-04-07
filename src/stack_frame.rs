@@ -74,7 +74,7 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         Ok(&mut stack[(self.sp as usize) - index ..])
     }
 
-    pub fn get(&mut self, heap: &mut Heap<'heap>) -> Result<usize, RuntimeError<'rom, 'heap>> {
+    pub fn get(&mut self, heap: &Heap<'heap>) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let stack = self.stack(heap);
         if self.sp < 1 { return Err(self.to_error(ErrorCode::StackUnderflow)) }
         self.sp -= 1;
