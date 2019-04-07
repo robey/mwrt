@@ -1,3 +1,4 @@
+use core::fmt;
 use crate::decode_int::decode_uint;
 
 pub struct ConstantPool<'rom> {
@@ -24,6 +25,21 @@ impl<'rom> ConstantPool<'rom> {
 
     fn next(&self, offset: usize) -> Option<usize> {
         decode_uint(self.data, offset).map(|size| size.new_index + (size.value as usize))
+    }
+}
+
+impl<'rom, 'heap> fmt::Debug for ConstantPool<'rom> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", "ConstantPool(")?;
+        let mut i = 0;
+        let mut item = self.get(i);
+        while let Some(x) = item {
+            if i > 0 { write!(f, ", ")?; }
+            write!(f, "{} = {:?}", i, x)?;
+            i += 1;
+            item = self.get(i);
+        }
+        write!(f, ")")
     }
 }
 
