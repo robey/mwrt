@@ -50,7 +50,5 @@ fn immediate_and_return() {
 #[test]
 fn constant_and_return() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_CONST_1, SLOT_0, PUSH_1, RETURN ]), Bytes::constant(300) ]);
-    println!("{:?}", p.to_runtime());
-    println!("{:?}", p.execute1(0, &[]));
     assert_eq!(p.execute1(0, &[]).ok(), Some(300));
 }

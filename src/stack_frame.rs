@@ -190,7 +190,6 @@ mod tests {
     fn locals_boundaries() {
         let mut data: [u8; 256] = [0; 256];
         let bytecode: [u8; 1] = [ 1 ];
-        println!("data {:?}", data.as_ptr());
         let mut heap = Heap::from_bytes(&mut data);
         let frame = StackFrame::allocate(&mut heap, 0, 2, 0, &bytecode[..]).unwrap();
         frame.locals()[2] = 1;
