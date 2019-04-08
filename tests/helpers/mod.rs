@@ -33,7 +33,7 @@ impl Bytes {
 
     pub fn constant(mut n: usize) -> Bytes {
         let mut b = Bytes { data: [0; 128], index: 0 };
-        for i in 0 .. mem::size_of::<usize>() {
+        for _i in 0 .. mem::size_of::<usize>() {
             b.data[b.index] = (n & 0xff) as u8;
             b.index += 1;
             n = n >> 8;
@@ -41,18 +41,18 @@ impl Bytes {
         b
     }
 
-    pub fn constant_sint(n: isize) -> Bytes {
-        let mut b = Bytes { data: [0; 128], index: 0 };
-        let mut raw: usize = if n >= 0 { (n as usize) << 1 } else { ((n as usize) << 1) ^ ((0 - 1) as usize) };
-        while raw > 128 {
-            b.data[b.index] = ((raw & 0x7f) as u8) | 0x80;
-            b.index += 1;
-            raw >>= 7;
-        }
-        b.data[b.index] = raw as u8;
-        b.index += 1;
-        b
-    }
+    // pub fn constant_sint(n: isize) -> Bytes {
+    //     let mut b = Bytes { data: [0; 128], index: 0 };
+    //     let mut raw: usize = if n >= 0 { (n as usize) << 1 } else { ((n as usize) << 1) ^ ((0 - 1) as usize) };
+    //     while raw > 128 {
+    //         b.data[b.index] = ((raw & 0x7f) as u8) | 0x80;
+    //         b.index += 1;
+    //         raw >>= 7;
+    //     }
+    //     b.data[b.index] = raw as u8;
+    //     b.index += 1;
+    //     b
+    // }
 
     pub fn to_bytes(&self) -> &[u8] {
         &self.data[0 .. self.index]
@@ -104,6 +104,14 @@ impl Platform {
         self.to_runtime().execute(code_index, args, &mut results).map(|count| {
             assert_eq!(count, 1);
             results[0]
+        })
+    }
+
+    pub fn execute2(&mut self, code_index: usize, args: &[usize]) -> Result<(usize, usize), RuntimeError> {
+        let mut results: [usize; 16] = [ 0; 16 ];
+        self.to_runtime().execute(code_index, args, &mut results).map(|count| {
+            assert_eq!(count, 2);
+            (results[0], results[1])
         })
     }
 }

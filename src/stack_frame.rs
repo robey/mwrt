@@ -81,6 +81,14 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         Ok(stack[self.sp as usize])
     }
 
+    pub fn get_n(&mut self, n: usize, heap: &Heap<'heap>) -> Result<&'heap [usize], RuntimeError<'rom, 'heap>> {
+        let stack = self.stack(heap);
+        if self.sp < (n as u8) { return Err(self.to_error(ErrorCode::StackUnderflow)) }
+        self.sp -= n as u8;
+        let start = self.sp as usize;
+        Ok(&stack[start .. start + n])
+    }
+
     pub fn put(&mut self, n: usize, heap: &mut Heap<'heap>) -> Result<(), RuntimeError<'rom, 'heap>> {
         let stack = self.stack(heap);
         if (self.sp as usize) >= stack.len() { return Err(self.to_error(ErrorCode::StackOverflow)) }

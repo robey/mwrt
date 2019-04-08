@@ -5,11 +5,13 @@ use core::mem;
 pub enum Opcode {
     Break = 0x00,
     Nop = 0x01,
-    Return = 0x02,
+    Dup = 0x02,                         // probably only hand-crafted code/tests
+    Return = 0x03,
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
     Immediate = 0x10,                   // N1 -> S1
     Constant = 0x11,                    // addr(constant N1) -> S1,
     LoadSlotN = 0x12,                   // S1[N1] -> S1
+    NewNN = 0x20,                       // S1(slots) S2(fill) -> obj S1
     Unknown = 0xff,
 }
 

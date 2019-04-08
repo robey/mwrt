@@ -15,11 +15,13 @@ impl fmt::Display for Instruction {
         match self.opcode {
             Opcode::Break => write!(f, "BREAK"),
             Opcode::Nop => write!(f, "NOP"),
+            Opcode::Dup => write!(f, "DUP"),
             Opcode::Return => write!(f, "RET"),
             Opcode::LoadSlot => write!(f, "LD [*]"),
             Opcode::Immediate => write!(f, "LD #{}", self.n1),
             Opcode::Constant => write!(f, "LD %{}", self.n1),
             Opcode::LoadSlotN => write!(f, "LD [#{}]", self.n1),
+            Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),
             _ => write!(f, "???({:x})", self.opcode as u8),
         }
     }

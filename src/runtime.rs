@@ -99,6 +99,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             Opcode::Nop => {
                 // nothing
             },
+            Opcode::Dup => {
+                let v = frame.get(&mut self.heap)?;
+                frame.put(v, &mut self.heap)?;
+                frame.put(v, &mut self.heap)?;
+            },
             Opcode::Return => {
                 let count = frame.get(&mut self.heap)?;
                 return Ok(Disposition::Return(count));
@@ -120,6 +125,13 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             Opcode::LoadSlot => {
 
             },
+
+            // two immediates:
+
+            Opcode::NewNN => {
+                let obj = self.new_object(n1 as usize, n2 as usize, frame)?;
+                frame.put(obj, &mut self.heap)?;
+            }
 
             _ => {
                 return Err(frame.to_error(ErrorCode::UnknownOpcode));
@@ -173,6 +185,19 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             }
             Ok(*slot_ref)
         }
+    }
+
+    pub fn new_object(
+        &mut self,
+        slots: usize,
+        from_stack: usize,
+        frame: &mut StackFrame<'rom, 'heap>
+    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        let obj = self.heap.allocate_array::<usize>(slots).ok_or_else(|| frame.to_error(ErrorCode::OutOfMemory))?;
+        let fields = frame.get_n(from_stack, &mut self.heap)?;
+        for i in 0 .. fields.len() { obj[i] = fields[i]; }
+        // gross: turn the object into its pointer
+        Ok(obj as *mut [usize] as *mut usize as usize)
     }
 }
 
