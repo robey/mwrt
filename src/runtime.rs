@@ -121,6 +121,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let v = self.load_slot(frame.get(&self.heap)?, n1 as usize, frame)?;
                 frame.put(v, &mut self.heap)?;
             },
+            Opcode::StoreSlotN => {
+                let v = frame.get(&self.heap)?;
+                self.store_slot(frame.get(&self.heap)?, n1 as usize, v, frame)?;
+            },
 
             Opcode::LoadSlot => {
 
@@ -185,6 +189,25 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             }
             Ok(*slot_ref)
         }
+    }
+
+    pub fn store_slot(
+        &self,
+        addr: usize,
+        slot: usize,
+        value: usize,
+        frame: &StackFrame<'rom, 'heap>,
+    ) -> Result<(), RuntimeError<'rom, 'heap>> {
+        // can't mutate a constant
+        if addr & 1 != 0 { return Err(frame.to_error(ErrorCode::InvalidAddress)); }
+        // heap address, should be aligned
+        let slot_addr = addr + slot * mem::size_of::<usize>();
+        let slot_ref = unsafe { &mut *(slot_addr as *mut usize) };
+        if slot_addr % mem::size_of::<usize>() != 0 || !self.heap.is_inside(slot_ref) {
+            return Err(frame.to_error(ErrorCode::InvalidAddress));
+        }
+        *slot_ref = value;
+        Ok(())
     }
 
     pub fn new_object(

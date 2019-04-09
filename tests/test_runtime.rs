@@ -15,6 +15,9 @@ const RETURN: &[u8] = &[ Opcode::Return as u8 ];
 const SLOT_0: &[u8] = &[ Opcode::LoadSlotN as u8, 0 ];
 const SLOT_1: &[u8] = &[ Opcode::LoadSlotN as u8, 2 ];
 const SLOT_2: &[u8] = &[ Opcode::LoadSlotN as u8, 4 ];
+const STORE_SLOT_0: &[u8] = &[ Opcode::StoreSlotN as u8, 0 ];
+// const STORE_SLOT_1: &[u8] = &[ Opcode::StoreSlotN as u8, 2 ];
+const STORE_SLOT_2: &[u8] = &[ Opcode::StoreSlotN as u8, 4 ];
 
 
 #[test]
@@ -66,7 +69,7 @@ fn constant_and_return() {
 }
 
 #[test]
-fn new_object() {
+fn new_object_and_load_slot() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_2, NEW_3_2, SLOT_0, PUSH_1, RETURN ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(128));
 
@@ -75,4 +78,27 @@ fn new_object() {
 
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_2, NEW_3_2, SLOT_2, PUSH_1, RETURN ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+}
+
+#[test]
+fn new_object_and_store_slot() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[
+        PUSH_128, PUSH_2, NEW_3_2, DUP, PUSH_1, STORE_SLOT_0, SLOT_0, PUSH_1, RETURN
+    ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[
+        PUSH_128, PUSH_2, NEW_3_2, DUP, PUSH_1, STORE_SLOT_0, SLOT_1, PUSH_1, RETURN
+    ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(2));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[
+        PUSH_128, PUSH_2, NEW_3_2, DUP, PUSH_1, STORE_SLOT_2, SLOT_2, PUSH_1, RETURN
+    ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[
+        PUSH_128, PUSH_2, NEW_3_2, DUP, PUSH_1, STORE_SLOT_2, SLOT_1, PUSH_1, RETURN
+    ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(2));
 }

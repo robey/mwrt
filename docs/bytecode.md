@@ -39,62 +39,62 @@
     - u8[...]: bytecode
 - each instruction is one byte, followed by optional (varint or zigzag) parameters
 - to get short-circuit or/and, use nested if
+- address of a constant is stored as `(c << 1) | 1`
 
 ## bytecodes
 
 - stack vars are S1, S2... (left to right); immediates are N1, N2...
-- 0 immediates (8)
-    - load slot #S2 from S1 -> S1
-    - store S3 into slot #S2 of S1
-    - if: execute next only if S1 is true
-    - new obj: S1 slots, filling the first S2 from stack -> S1
-    - call function S2 with S1 args
-    - return with S1 values
-    - do nothing
-    - break into debugger
-- 1 immediate (16)
-    - load immediate N1 -> S1
-    - load const #N1 addr (as obj) -> S1    (is this necessary?)
-    - load const #N1 (as sint value) -> S1
-    - load local #N1 -> S1
-    - load global #N1 -> S1
-    - load slot #N1 from S1 -> S1
-    - store S1 into local #N1
-    - store S1 into global #N1
-    - store S2 into slot #N1 of S1
-    - length (in slots) of S1 -> S1
+- 0 immediates (9)
+    - load slot #S2 from S1 -> S1 `LD [*]`
+    - store S3 into slot #S2 of S1 `ST [*]`
+    - if: execute next only if S1 is true `IF`
+    - new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
+    - call function S2 with S1 args `CALL`
+    - length (in slots) of S1 -> S1 `SIZE`
+    - * return with S1 values `RET`
+    - * do nothing `NOP`
+    - * break into debugger `BREAK`
+- 1 immediate (13)
+    - * load immediate N1 -> S1 `LD #n`
+    - * load address of const #N1 (as obj) -> S1 `LD %n`
+    - load local #N1 -> S1 `LD @n`
+    - load global #N1 -> S1 `LD $n`
+    - * load slot #N1 from S1 -> S1 `LD [#n]`
+    - store S1 into local #N1 `ST @n`
+    - store S1 into global #N1 `ST $n`
+    - * store S2 into slot #N1 of S1 `ST [#n]`
     - unary op #N1 on S1
     - binary op #N1 on S1, S2
-    - new obj: N1 slots, filling the first S1 from stack -> S1  (?)
-    - call function S1 with N1 args
-    - return with N1 values
-    - jump to absolute byte #N1
+    - ~new obj: N1 slots, filling the first S1 from stack -> S1~
+    - call function S1 with N1 args `CALL #n`
+    - return with N1 values `RET #n`
+    - jump to absolute byte #N1 `JUMP #n`
 - 2 immediates (2)
-    - new obj: N1 slots, filling the first N2 from stack -> S1
-    - call native module #N1, function #N2
+    - * new obj: N1 slots, filling the first N2 from stack -> S1 `NEW #n, #n`
+    - call native module #N1, function #N2 `SYS #n, #n`
 
 ## unary operations
 
-- 0: not
-- 1: negative
-- 2: bit-not
+- 0: not `NOT`
+- 1: negative `NEG`
+- 2: bit-not `INV`
 
 ## binary operations
 
-- 0: +
-- 1: -
-- 2: *
-- 3: /
-- 4: %
-- 5: =
-- 6: <
-- 7: >=
-- 8: bit-or
-- 9: bit-and
-- a: bit-xor
-- b: shift-left
-- c: shift-right
-- d: sign shift-right
+- 0: + `ADD`
+- 1: - `SUB`
+- 2: * `MUL`
+- 3: / `DIV`
+- 4: % `MOD`
+- 5: = `EQ`
+- 6: < `LT`
+- 7: >= `GE`
+- 8: bit-or `OR`
+- 9: bit-and `AND`
+- a: bit-xor `XOR`
+- b: shift-left `LSL`
+- c: shift-right `LSR`
+- d: sign shift-right `ASR`
 
 ## potential native modules
 
@@ -112,3 +112,16 @@
     - fill b[i..j] with x
 - strings
 - infinite ints
+
+## extended arrays/strings
+
+- since an object can only have 64 slots
+- use indirection: an extended array has a size, capacity, and refs to spans of 64 slots
+
+
+
+// macro_rules! fail {
+// -            ($code: expr) => {
+// -                return Err(frame.to_error($code));
+// -            };
+// -        }
