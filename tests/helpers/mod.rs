@@ -91,7 +91,7 @@ impl Platform {
         Runtime::new(pool, &mut self.heap_data)
     }
 
-    pub fn execute0(&mut self, code_index: usize, args: &[usize]) -> Result<(), RuntimeError> {
+    pub fn execute0(&mut self, code_index: u16, args: &[usize]) -> Result<(), RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().execute(code_index, args, &mut results).map(|count| {
             assert_eq!(count, 0);
@@ -99,7 +99,7 @@ impl Platform {
         })
     }
 
-    pub fn execute1(&mut self, code_index: usize, args: &[usize]) -> Result<usize, RuntimeError> {
+    pub fn execute1(&mut self, code_index: u16, args: &[usize]) -> Result<usize, RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().execute(code_index, args, &mut results).map(|count| {
             assert_eq!(count, 1);
@@ -107,7 +107,7 @@ impl Platform {
         })
     }
 
-    pub fn execute2(&mut self, code_index: usize, args: &[usize]) -> Result<(usize, usize), RuntimeError> {
+    pub fn execute2(&mut self, code_index: u16, args: &[usize]) -> Result<(usize, usize), RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().execute(code_index, args, &mut results).map(|count| {
             assert_eq!(count, 2);

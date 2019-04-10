@@ -47,7 +47,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     }
 
     pub fn execute(
-        &mut self, code_index: usize, args: &[usize], results: &mut [usize]
+        &mut self, code_index: u16, args: &[usize], results: &mut [usize]
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let frame = self.frame_from_code(code_index, None, args)?;
         loop {
@@ -61,7 +61,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                     return Ok(0);
                 },
                 Disposition::Return(count) => {
-                    let stack_results = frame.stack_from(count, &self.heap)?;
+                    let stack_results = frame.get_n(count)?;
                     let n: usize = if count < results.len() { count } else { results.len() };
                     for i in 0 .. n { results[i] = stack_results[i] }
                     return Ok(count);
@@ -100,30 +100,30 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 // nothing
             },
             Opcode::Dup => {
-                let v = frame.get(&mut self.heap)?;
-                frame.put(v, &mut self.heap)?;
-                frame.put(v, &mut self.heap)?;
+                let v = frame.get()?;
+                frame.put(v)?;
+                frame.put(v)?;
             },
             Opcode::Return => {
-                let count = frame.get(&mut self.heap)?;
+                let count = frame.get()?;
                 return Ok(Disposition::Return(count));
             },
 
             // one immediate:
 
             Opcode::Immediate => {
-                frame.put(n1 as usize, &mut self.heap)?;
+                frame.put(n1 as usize)?;
             },
             Opcode::Constant => {
-                frame.put(((n1 as usize) << 1) | 1, &mut self.heap)?;
+                frame.put(((n1 as usize) << 1) | 1)?;
             },
             Opcode::LoadSlotN => {
-                let v = self.load_slot(frame.get(&self.heap)?, n1 as usize, frame)?;
-                frame.put(v, &mut self.heap)?;
+                let v = self.load_slot(frame.get()?, n1 as usize, frame)?;
+                frame.put(v)?;
             },
             Opcode::StoreSlotN => {
-                let v = frame.get(&self.heap)?;
-                self.store_slot(frame.get(&self.heap)?, n1 as usize, v, frame)?;
+                let v = frame.get()?;
+                self.store_slot(frame.get()?, n1 as usize, v, frame)?;
             },
 
             Opcode::LoadSlot => {
@@ -134,7 +134,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
 
             Opcode::NewNN => {
                 let obj = self.new_object(n1 as usize, n2 as usize, frame)?;
-                frame.put(obj, &mut self.heap)?;
+                frame.put(obj)?;
             }
 
             _ => {
@@ -149,11 +149,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     // for it, and load the arguments into locals.
     pub fn frame_from_code(
         &mut self,
-        code_index: usize,
+        code_index: u16,
         prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
         args: &[usize]
     ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
-        let code = self.pool.get(code_index).and_then(|data| Code::from_data(data)).ok_or(
+        let code = self.pool.get(code_index as usize).and_then(|data| Code::from_data(data)).ok_or(
             prev_frame.to_error(ErrorCode::InvalidCodeObject)
         )?;
 
@@ -217,7 +217,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         frame: &mut StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let obj = self.heap.allocate_array::<usize>(slots).ok_or_else(|| frame.to_error(ErrorCode::OutOfMemory))?;
-        let fields = frame.get_n(from_stack, &mut self.heap)?;
+        let fields = frame.get_n(from_stack)?;
         for i in 0 .. fields.len() { obj[i] = fields[i]; }
         // gross: turn the object into its pointer
         Ok(obj as *mut [usize] as *mut usize as usize)
