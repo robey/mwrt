@@ -50,13 +50,13 @@
     - if: execute next only if S1 is true `IF`
     - new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
     - call function S2 with S1 args `CALL`
-    - length (in slots) of S1 -> S1 `SIZE`
+    - * length (in slots) of S1 -> S1 `SIZE`
     - * return with S1 values `RET`
     - * do nothing `NOP`
     - * break into debugger `BREAK`
 - 1 immediate (13)
     - * load immediate N1 -> S1 `LD #n`
-    - * load address of const #N1 (as obj) -> S1 `LD %n`
+    - * load address of const #N1 (as obj) -> S1 `LD %n` --- *maybe not necessary?*
     - load local #N1 -> S1 `LD @n`
     - load global #N1 -> S1 `LD $n`
     - * load slot #N1 from S1 -> S1 `LD [#n]`

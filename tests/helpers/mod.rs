@@ -41,6 +41,12 @@ impl Bytes {
         b
     }
 
+    pub fn data(data: &[u8]) -> Bytes {
+        let mut b = Bytes { data: [0; 128], index: 0 };
+        b.add(data);
+        b
+    }
+
     // pub fn constant_sint(n: isize) -> Bytes {
     //     let mut b = Bytes { data: [0; 128], index: 0 };
     //     let mut raw: usize = if n >= 0 { (n as usize) << 1 } else { ((n as usize) << 1) ^ ((0 - 1) as usize) };

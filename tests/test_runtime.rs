@@ -1,5 +1,6 @@
 mod helpers;
 
+use core::mem;
 use mwrt::Opcode;
 use helpers::{Bytes, Platform};
 
@@ -12,6 +13,7 @@ const PUSH_2: &[u8] = &[ Opcode::Immediate as u8, 4 ];
 const PUSH_128: &[u8] = &[ Opcode::Immediate as u8, 0x80, 2 ];
 const PUSH_CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
 const RETURN: &[u8] = &[ Opcode::Return as u8 ];
+const SIZE: &[u8] = &[ Opcode::Size as u8 ];
 const SLOT_0: &[u8] = &[ Opcode::LoadSlotN as u8, 0 ];
 const SLOT_1: &[u8] = &[ Opcode::LoadSlotN as u8, 2 ];
 const SLOT_2: &[u8] = &[ Opcode::LoadSlotN as u8, 4 ];
@@ -102,3 +104,33 @@ fn new_object_and_store_slot() {
     ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(2));
 }
+
+#[test]
+fn constant_object_and_load_slot() {
+    let mut p = Platform::with(&[
+        Bytes::basic_code(&[ PUSH_CONST_1, SLOT_0, PUSH_1, RETURN ]),
+        Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0 ]),
+    ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(5));
+
+    let mut p = Platform::with(&[
+        Bytes::basic_code(&[ PUSH_CONST_1, SLOT_2, PUSH_1, RETURN ]),
+        Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0 ]),
+    ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(6));
+}
+
+#[test]
+fn object_size() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_2, NEW_3_2, SIZE, PUSH_1, RETURN ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(4));
+
+    let mut p = Platform::with(&[
+        Bytes::basic_code(&[ PUSH_CONST_1, SIZE, PUSH_1, RETURN ]),
+        Bytes::data(&[ 0, 0, 0, 0, 1, 0, 0, 0 ]),
+    ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(8 / mem::size_of::<usize>()));
+}
+
+
+// FIXME: error cases

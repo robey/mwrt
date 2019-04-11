@@ -7,6 +7,7 @@ pub enum Opcode {
     Nop = 0x01,
     Dup = 0x02,                         // probably only hand-crafted code/tests
     Return = 0x03,
+    Size = 0x04,                        // #slots(S1) -> S1
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
     Immediate = 0x10,                   // N1 -> S1
     Constant = 0x11,                    // addr(constant N1) -> S1,

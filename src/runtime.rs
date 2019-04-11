@@ -108,6 +108,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let count = frame.get()?;
                 return Ok(Disposition::Return(count));
             },
+            Opcode::Size => {
+                let addr = frame.get()?;
+                frame.put(self.object_size(addr, frame)?)?;
+            },
 
             // one immediate:
 
@@ -167,12 +171,29 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         frame.start_locals(args).map(|_| frame)
     }
 
+    pub fn object_size(
+        &self,
+        addr: usize,
+        frame: &StackFrame<'rom, 'heap>
+    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        // an object might be serialized into the constant pool, so allow for either form.
+        if addr & 1 != 0 {
+            // constant pool address
+            let obj = self.pool.get(addr >> 1).ok_or_else(|| frame.to_error(ErrorCode::InvalidConstant))?;
+            Ok(obj.len() / mem::size_of::<usize>())
+        } else {
+            // heap address, should be aligned
+            Ok(self.heap.size_of(unsafe { &*(addr as *const usize) }) / mem::size_of::<usize>())
+        }
+    }
+
     pub fn load_slot(
         &self,
         addr: usize,
         slot: usize,
         frame: &StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        // an object might be serialized into the constant pool, so allow for either form.
         if addr & 1 != 0 {
             // constant pool address
             let obj = self.pool.get(addr >> 1).ok_or_else(|| frame.to_error(ErrorCode::InvalidConstant))?;
