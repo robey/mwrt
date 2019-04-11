@@ -6,10 +6,13 @@ use helpers::{Bytes, Platform};
 
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
+const NEW: &[u8] = &[ Opcode::New as u8 ];
 const NEW_3_2: &[u8] = &[ Opcode::NewNN as u8, 6, 4 ];
 const NOP: &[u8] = &[ Opcode::Nop as u8 ];
+const PUSH_0: &[u8] = &[ Opcode::Immediate as u8, 0 ];
 const PUSH_1: &[u8] = &[ Opcode::Immediate as u8, 2 ];
 const PUSH_2: &[u8] = &[ Opcode::Immediate as u8, 4 ];
+const PUSH_64: &[u8] = &[ Opcode::Immediate as u8, 0x80, 1 ];
 const PUSH_128: &[u8] = &[ Opcode::Immediate as u8, 0x80, 2 ];
 const PUSH_CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
 const RETURN: &[u8] = &[ Opcode::Return as u8 ];
@@ -80,6 +83,25 @@ fn new_object_and_load_slot() {
 
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_2, NEW_3_2, SLOT_2, PUSH_1, RETURN ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+}
+
+#[test]
+fn new_object_errors() {
+    // 128 is too big
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_0, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(InvalidSize at [frame code=0 pc=5 sp=0])");
+
+    // more slots to fill than are allocated
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, PUSH_2, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(InvalidSize at [frame code=0 pc=4 sp=0])");
+
+    // we made a heap that can't actually hold a 64-slot object and also any stack frame at all
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_64, PUSH_0, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfMemory at [frame code=0 pc=5 sp=0])");
+
+    // there aren't enough fields on the stack
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_64, PUSH_2, PUSH_2, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(StackUnderflow at [frame code=0 pc=7 sp=1])");
 }
 
 #[test]

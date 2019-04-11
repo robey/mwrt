@@ -31,6 +31,7 @@
 - format:
     - u32: magic = F0 9F 97 BF
     - u8: version = 0
+    - u8: global count
     - uint: index of "main" function in constant pool
     - u8[...]: constant pool
 - code object:
@@ -48,7 +49,7 @@
     - load slot #S2 from S1 -> S1 `LD [*]`
     - store S3 into slot #S2 of S1 `ST [*]`
     - if: execute next only if S1 is true `IF`
-    - new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
+    - * new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
     - call function S2 with S1 args `CALL`
     - * length (in slots) of S1 -> S1 `SIZE`
     - * return with S1 values `RET`

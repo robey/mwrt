@@ -108,6 +108,12 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let count = frame.get()?;
                 return Ok(Disposition::Return(count));
             },
+            Opcode::New => {
+                let fill = frame.get()?;
+                let slots = frame.get()?;
+                let obj = self.new_object(slots, fill, frame)?;
+                frame.put(obj)?;
+            },
             Opcode::Size => {
                 let addr = frame.get()?;
                 frame.put(self.object_size(addr, frame)?)?;
@@ -237,6 +243,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         from_stack: usize,
         frame: &mut StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        if slots > 64 || from_stack > slots { return Err(frame.to_error(ErrorCode::InvalidSize)) }
         let obj = self.heap.allocate_array::<usize>(slots).ok_or_else(|| frame.to_error(ErrorCode::OutOfMemory))?;
         let fields = frame.get_n(from_stack)?;
         for i in 0 .. fields.len() { obj[i] = fields[i]; }

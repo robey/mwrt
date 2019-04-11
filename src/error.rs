@@ -7,6 +7,7 @@ pub enum ErrorCode {
     InvalidCodeObject = 1,
     InvalidConstant,
     InvalidAddress,
+    InvalidSize,
     UnknownOpcode,
     TruncatedCode,
     StackUnderflow,

@@ -17,6 +17,7 @@ impl fmt::Display for Instruction {
             Opcode::Nop => write!(f, "NOP"),
             Opcode::Dup => write!(f, "DUP"),
             Opcode::Return => write!(f, "RET"),
+            Opcode::New => write!(f, "NEW"),
             Opcode::Size => write!(f, "SIZE"),
             Opcode::LoadSlot => write!(f, "LD [*]"),
             Opcode::Immediate => write!(f, "LD #{}", self.n1),
