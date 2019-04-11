@@ -14,6 +14,9 @@ pub enum Opcode {
     Constant = 0x11,                    // addr(constant N1) -> S1,
     LoadSlotN = 0x12,                   // S1[N1] -> S1
     StoreSlotN = 0x13,                  // S1[N1] := S2
+    LoadLocalN = 0x14,                  // @N1 -> S1
+    StoreLocalN = 0x15,                 // S1 -> @N1
+    ReturnN = 0x1f,
     NewNN = 0x20,                       // N1(slots) N2(fill) -> obj S1
     Unknown = 0xff,
 }

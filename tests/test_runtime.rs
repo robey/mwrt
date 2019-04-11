@@ -6,6 +6,8 @@ use helpers::{Bytes, Platform};
 
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
+const LOAD_LOCAL_0: &[u8] = &[ Opcode::LoadLocalN as u8, 0 ];
+const LOAD_LOCAL_1: &[u8] = &[ Opcode::LoadLocalN as u8, 2 ];
 const NEW: &[u8] = &[ Opcode::New as u8 ];
 const NEW_3_2: &[u8] = &[ Opcode::NewNN as u8, 6, 4 ];
 const NOP: &[u8] = &[ Opcode::Nop as u8 ];
@@ -16,10 +18,14 @@ const PUSH_64: &[u8] = &[ Opcode::Immediate as u8, 0x80, 1 ];
 const PUSH_128: &[u8] = &[ Opcode::Immediate as u8, 0x80, 2 ];
 const PUSH_CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
 const RETURN: &[u8] = &[ Opcode::Return as u8 ];
+const RETURN_1: &[u8] = &[ Opcode::ReturnN as u8, 2 ];
 const SIZE: &[u8] = &[ Opcode::Size as u8 ];
 const SLOT_0: &[u8] = &[ Opcode::LoadSlotN as u8, 0 ];
 const SLOT_1: &[u8] = &[ Opcode::LoadSlotN as u8, 2 ];
 const SLOT_2: &[u8] = &[ Opcode::LoadSlotN as u8, 4 ];
+const STORE_LOCAL_0: &[u8] = &[ Opcode::StoreLocalN as u8, 0 ];
+const STORE_LOCAL_1: &[u8] = &[ Opcode::StoreLocalN as u8, 2 ];
+const STORE_LOCAL_10: &[u8] = &[ Opcode::StoreLocalN as u8, 20 ];
 const STORE_SLOT_0: &[u8] = &[ Opcode::StoreSlotN as u8, 0 ];
 // const STORE_SLOT_1: &[u8] = &[ Opcode::StoreSlotN as u8, 2 ];
 const STORE_SLOT_2: &[u8] = &[ Opcode::StoreSlotN as u8, 4 ];
@@ -93,7 +99,7 @@ fn new_object_errors() {
 
     // more slots to fill than are allocated
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, PUSH_2, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
-    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(InvalidSize at [frame code=0 pc=4 sp=0])");
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=4 sp=0])");
 
     // we made a heap that can't actually hold a 64-slot object and also any stack frame at all
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_64, PUSH_0, NEW, SLOT_0, PUSH_1, RETURN ]) ]);
@@ -154,5 +160,16 @@ fn object_size() {
     assert_eq!(p.execute1(0, &[]).ok(), Some(8 / mem::size_of::<usize>()));
 }
 
+#[test]
+fn load_and_store_local() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_0, PUSH_2, LOAD_LOCAL_0, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_10 ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=3 sp=1])");
+}
+
 
 // FIXME: error cases
+
+// FIXME: new opcodes in disasm

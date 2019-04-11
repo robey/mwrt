@@ -135,6 +135,21 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let v = frame.get()?;
                 self.store_slot(frame.get()?, n1 as usize, v, frame)?;
             },
+            Opcode::LoadLocalN => {
+                let locals = frame.locals();
+                let n = n1 as usize;
+                if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
+                frame.put(locals[n])?;
+            },
+            Opcode::StoreLocalN => {
+                let locals = frame.locals_mut();
+                let n = n1 as usize;
+                if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
+                locals[n] = frame.get()?;
+            },
+            Opcode::ReturnN => {
+                return Ok(Disposition::Return(n1 as usize));
+            },
 
             Opcode::LoadSlot => {
 
@@ -243,7 +258,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         from_stack: usize,
         frame: &mut StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        if slots > 64 || from_stack > slots { return Err(frame.to_error(ErrorCode::InvalidSize)) }
+        if slots > 64 { return Err(frame.to_error(ErrorCode::InvalidSize)) }
+        if from_stack > slots { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
         let obj = self.heap.allocate_array::<usize>(slots).ok_or_else(|| frame.to_error(ErrorCode::OutOfMemory))?;
         let fields = frame.get_n(from_stack)?;
         for i in 0 .. fields.len() { obj[i] = fields[i]; }

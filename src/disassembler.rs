@@ -24,6 +24,9 @@ impl fmt::Display for Instruction {
             Opcode::Constant => write!(f, "LD %{}", self.n1),
             Opcode::LoadSlotN => write!(f, "LD [#{}]", self.n1),
             Opcode::StoreSlotN => write!(f, "ST [#{}]", self.n1),
+            Opcode::LoadLocalN => write!(f, "LD @{}", self.n1),
+            Opcode::StoreLocalN => write!(f, "ST @{}", self.n1),
+            Opcode::ReturnN => write!(f, "RET #{}", self.n1),
             Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),
             _ => write!(f, "???({:x})", self.opcode as u8),
         }

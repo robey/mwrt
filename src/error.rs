@@ -8,6 +8,7 @@ pub enum ErrorCode {
     InvalidConstant,
     InvalidAddress,
     InvalidSize,
+    OutOfBounds,
     UnknownOpcode,
     TruncatedCode,
     StackUnderflow,
