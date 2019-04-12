@@ -16,7 +16,8 @@ pub enum Opcode {
     StoreSlotN = 0x13,                  // S1[N1] := S2
     LoadLocalN = 0x14,                  // @N1 -> S1
     StoreLocalN = 0x15,                 // S1 -> @N1
-    ReturnN = 0x1f,
+    Unary = 0x1d,
+    ReturnN = 0x1f,                     // return N1 items from stack
     NewNN = 0x20,                       // N1(slots) N2(fill) -> obj S1
     Unknown = 0xff,
 }
@@ -29,6 +30,22 @@ pub const LAST_N_OPCODE: u8 = 0x30;
 impl Opcode {
     // why isn't this automatic or derivable?
     pub fn from_u8(n: u8) -> Opcode {
+        unsafe { mem::transmute(n) }
+    }
+}
+
+
+#[repr(usize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Unary {
+    Not = 0,
+    Negative = 1,
+    BitNot = 2,
+    Unknown = 0xff,
+}
+
+impl Unary {
+    pub fn from_usize(n: usize) -> Unary {
         unsafe { mem::transmute(n) }
     }
 }

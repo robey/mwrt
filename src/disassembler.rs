@@ -1,6 +1,6 @@
 use core::fmt;
 use crate::decode_int::decode_sint;
-use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode};
+use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
 
 pub struct Instruction {
     offset: usize,
@@ -26,6 +26,12 @@ impl fmt::Display for Instruction {
             Opcode::StoreSlotN => write!(f, "ST [#{}]", self.n1),
             Opcode::LoadLocalN => write!(f, "LD @{}", self.n1),
             Opcode::StoreLocalN => write!(f, "ST @{}", self.n1),
+            Opcode::Unary => match Unary::from_usize(self.n1 as usize) {
+                Unary::Not => write!(f, "NOT"),
+                Unary::Negative => write!(f, "NEG"),
+                Unary::BitNot => write!(f, "BITNOT"),
+                _ => write!(f, "?unary?"),
+            },
             Opcode::ReturnN => write!(f, "RET #{}", self.n1),
             Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),
             _ => write!(f, "???({:x})", self.opcode as u8),
@@ -116,6 +122,30 @@ mod tests {
         assert_eq!(
             b.to_str(),
             "0000: BREAK\n0001: NOP\n0002: RET\n0003: LD [*]\n0004: LD #1\n0006: LD %128\n0009: LD [#257]\n"
+        );
+
+        let bytes: &[u8] = &[
+            Opcode::Dup as u8, Opcode::New as u8, Opcode::Size as u8, Opcode::StoreSlotN as u8, 0x84, 4,
+            Opcode::LoadLocalN as u8, 0x80, 0x80, 1, Opcode::StoreLocalN as u8, 6,
+            Opcode::ReturnN as u8, 2,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: DUP\n0001: NEW\n0002: SIZE\n0003: ST [#258]\n0006: LD @8192\n000a: ST @3\n000c: RET #1\n"
+        );
+
+        let bytes: &[u8] = &[
+            Opcode::NewNN as u8, 0x80, 0x80, 0x80, 1, 0x82, 0x80, 0x80, 1,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: NEW #1048576, #1048577\n"
         );
     }
 }

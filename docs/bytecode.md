@@ -58,17 +58,17 @@
 - 1 immediate (13)
     - * load immediate N1 -> S1 `LD #n`
     - * load address of const #N1 (as obj) -> S1 `LD %n` --- *maybe not necessary?*
-    - load local #N1 -> S1 `LD @n`
+    - * load local #N1 -> S1 `LD @n`
     - load global #N1 -> S1 `LD $n`
     - * load slot #N1 from S1 -> S1 `LD [#n]`
-    - store S1 into local #N1 `ST @n`
+    - * store S1 into local #N1 `ST @n`
     - store S1 into global #N1 `ST $n`
     - * store S2 into slot #N1 of S1 `ST [#n]`
-    - unary op #N1 on S1
+    - * unary op #N1 on S1
     - binary op #N1 on S1, S2
     - ~new obj: N1 slots, filling the first S1 from stack -> S1~
     - call function S1 with N1 args `CALL #n`
-    - return with N1 values `RET #n`
+    - * return with N1 values `RET #n`
     - jump to absolute byte #N1 `JUMP #n`
 - 2 immediates (2)
     - * new obj: N1 slots, filling the first N2 from stack -> S1 `NEW #n, #n`

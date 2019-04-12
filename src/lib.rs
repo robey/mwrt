@@ -11,5 +11,5 @@ mod stack_frame;
 pub use constant_pool::ConstantPool;
 pub use disassembler::{disassemble, disassemble_to_string};
 pub use error::{ErrorCode, RuntimeError};
-pub use opcode::Opcode;
+pub use opcode::{Opcode, Unary};
 pub use runtime::Runtime;

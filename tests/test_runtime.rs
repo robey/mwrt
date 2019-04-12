@@ -1,7 +1,7 @@
 mod helpers;
 
 use core::mem;
-use mwrt::Opcode;
+use mwrt::{Opcode, Unary};
 use helpers::{Bytes, Platform};
 
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
@@ -29,6 +29,9 @@ const STORE_LOCAL_10: &[u8] = &[ Opcode::StoreLocalN as u8, 20 ];
 const STORE_SLOT_0: &[u8] = &[ Opcode::StoreSlotN as u8, 0 ];
 // const STORE_SLOT_1: &[u8] = &[ Opcode::StoreSlotN as u8, 2 ];
 const STORE_SLOT_2: &[u8] = &[ Opcode::StoreSlotN as u8, 4 ];
+const UNARY_NOT: &[u8] = &[ Opcode::Unary as u8, (Unary::Not as u8) << 1 ];
+const UNARY_NEG: &[u8] = &[ Opcode::Unary as u8, (Unary::Negative as u8) << 1 ];
+const UNARY_BITNOT: &[u8] = &[ Opcode::Unary as u8, (Unary::BitNot as u8) << 1 ];
 
 
 #[test]
@@ -165,11 +168,35 @@ fn load_and_store_local() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_0, PUSH_2, LOAD_LOCAL_0, RETURN_1 ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(128));
 
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_0, PUSH_2, STORE_LOCAL_1, LOAD_LOCAL_0, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_0, PUSH_2, STORE_LOCAL_1, LOAD_LOCAL_1, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(2));
+
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_10 ]) ]);
     assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=3 sp=1])");
 }
 
+#[test]
+fn unary() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, UNARY_NOT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, UNARY_NOT, UNARY_NOT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, UNARY_NEG, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-128 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_0, UNARY_BITNOT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-1 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, UNARY_BITNOT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-2 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, &[ Opcode::Unary as u8, 50 ], RETURN_1 ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(UnknownOpcode at [frame code=0 pc=2 sp=0])");
+}
 
 // FIXME: error cases
-
-// FIXME: new opcodes in disasm

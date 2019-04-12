@@ -4,7 +4,7 @@ use mwgc::Heap;
 use crate::constant_pool::ConstantPool;
 use crate::decode_int::{decode_sint, decode_unaligned};
 use crate::error::{ErrorCode, RuntimeError, ToError};
-use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode};
+use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
@@ -147,6 +147,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 locals[n] = frame.get()?;
             },
+            Opcode::Unary => {
+                let v = frame.get()?;
+                let op = Unary::from_usize(n1 as usize);
+                frame.put(self.unary(op, v, frame)?)?;
+            },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(n1 as usize));
             },
@@ -265,6 +270,20 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         for i in 0 .. fields.len() { obj[i] = fields[i]; }
         // gross: turn the object into its pointer
         Ok(obj as *mut [usize] as *mut usize as usize)
+    }
+
+    pub fn unary(
+        &self,
+        op: Unary,
+        n1: usize,
+        frame: &StackFrame<'rom, 'heap>
+    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+        match op {
+            Unary::Not => Ok(if n1 == 0 { 1 } else { 0 }),
+            Unary::Negative => Ok(-(n1 as isize) as usize),
+            Unary::BitNot => Ok(!n1),
+            _ => Err(frame.to_error(ErrorCode::UnknownOpcode)),
+        }
     }
 }
 
