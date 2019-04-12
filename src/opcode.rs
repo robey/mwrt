@@ -16,6 +16,8 @@ pub enum Opcode {
     StoreSlotN = 0x13,                  // S1[N1] := S2
     LoadLocalN = 0x14,                  // @N1 -> S1
     StoreLocalN = 0x15,                 // S1 -> @N1
+    LoadGlobalN = 0x16,                 // $N1 -> S1
+    StoreGlobalN = 0x17,                // S1 -> $N1
     Unary = 0x1d,
     Binary = 0x1e,
     ReturnN = 0x1f,                     // return N1 items from stack

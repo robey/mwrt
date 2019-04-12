@@ -26,6 +26,8 @@ impl fmt::Display for Instruction {
             Opcode::StoreSlotN => write!(f, "ST [#{}]", self.n1),
             Opcode::LoadLocalN => write!(f, "LD @{}", self.n1),
             Opcode::StoreLocalN => write!(f, "ST @{}", self.n1),
+            Opcode::LoadGlobalN => write!(f, "LD ${}", self.n1),
+            Opcode::StoreGlobalN => write!(f, "ST ${}", self.n1),
             Opcode::Unary => match Unary::from_usize(self.n1 as usize) {
                 Unary::Not => write!(f, "NOT"),
                 Unary::Negative => write!(f, "NEG"),
@@ -156,13 +158,14 @@ mod tests {
 
         let bytes: &[u8] = &[
             Opcode::NewNN as u8, 0x80, 0x80, 0x80, 1, 0x82, 0x80, 0x80, 1,
+            Opcode::LoadGlobalN as u8, 12, Opcode::StoreGlobalN as u8, 100,
         ];
         let mut buffer: [u8; 256] = [0; 256];
         let mut b = StringBuffer::new(&mut buffer);
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: NEW #1048576, #1048577\n"
+            "0000: NEW #1048576, #1048577\n0009: LD $6\n000b: ST $50\n"
         );
 
         let bytes: &[u8] = &[

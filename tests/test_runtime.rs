@@ -20,6 +20,8 @@ const BINARY_LSR: &[u8] = &[ Opcode::Binary as u8, (Binary::ShiftRight as u8) <<
 const BINARY_ASR: &[u8] = &[ Opcode::Binary as u8, (Binary::SignShiftRight as u8) << 1 ];
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
+const LOAD_GLOBAL_0: &[u8] = &[ Opcode::LoadGlobalN as u8, 0 ];
+const LOAD_GLOBAL_1: &[u8] = &[ Opcode::LoadGlobalN as u8, 2 ];
 const LOAD_LOCAL_0: &[u8] = &[ Opcode::LoadLocalN as u8, 0 ];
 const LOAD_LOCAL_1: &[u8] = &[ Opcode::LoadLocalN as u8, 2 ];
 const NEW: &[u8] = &[ Opcode::New as u8 ];
@@ -43,6 +45,9 @@ const SLOT_2: &[u8] = &[ Opcode::LoadSlotN as u8, 4 ];
 const STORE_LOCAL_0: &[u8] = &[ Opcode::StoreLocalN as u8, 0 ];
 const STORE_LOCAL_1: &[u8] = &[ Opcode::StoreLocalN as u8, 2 ];
 const STORE_LOCAL_10: &[u8] = &[ Opcode::StoreLocalN as u8, 20 ];
+const STORE_GLOBAL_0: &[u8] = &[ Opcode::StoreGlobalN as u8, 0 ];
+const STORE_GLOBAL_1: &[u8] = &[ Opcode::StoreGlobalN as u8, 2 ];
+const STORE_GLOBAL_10: &[u8] = &[ Opcode::StoreGlobalN as u8, 20 ];
 const STORE_SLOT_0: &[u8] = &[ Opcode::StoreSlotN as u8, 0 ];
 // const STORE_SLOT_1: &[u8] = &[ Opcode::StoreSlotN as u8, 2 ];
 const STORE_SLOT_2: &[u8] = &[ Opcode::StoreSlotN as u8, 4 ];
@@ -192,6 +197,21 @@ fn load_and_store_local() {
     assert_eq!(p.execute1(0, &[]).ok(), Some(2));
 
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_LOCAL_10 ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=3 sp=1])");
+}
+
+#[test]
+fn load_and_store_global() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_GLOBAL_0, PUSH_2, LOAD_GLOBAL_0, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_GLOBAL_0, PUSH_2, STORE_GLOBAL_1, LOAD_GLOBAL_0, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_GLOBAL_0, PUSH_2, STORE_GLOBAL_1, LOAD_GLOBAL_1, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(2));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, STORE_GLOBAL_10 ]) ]);
     assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=3 sp=1])");
 }
 

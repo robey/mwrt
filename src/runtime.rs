@@ -39,11 +39,21 @@ impl<'rom> Code<'rom> {
 pub struct Runtime<'rom, 'heap> {
     pool: ConstantPool<'rom>,
     heap: Heap<'heap>,
+    globals: &'heap mut [usize],
 }
 
 impl<'rom, 'heap> Runtime<'rom, 'heap> {
-    pub fn new(pool: ConstantPool<'rom>, heap_data: &'heap mut [u8]) -> Runtime<'rom, 'heap> {
-        Runtime { pool, heap: Heap::from_bytes(heap_data) }
+    pub fn new(
+        pool: ConstantPool<'rom>,
+        heap_data: &'heap mut [u8],
+        global_count: usize,
+    ) -> Result<Runtime<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
+        let mut heap = Heap::from_bytes(heap_data);
+        // just allocate the globals as a heap object
+        let globals = heap.allocate_array::<usize>(global_count).ok_or_else(|| {
+            RuntimeError::new(ErrorCode::OutOfMemory, None)
+        })?;
+        Ok(Runtime { pool, heap, globals })
     }
 
     pub fn execute(
@@ -147,6 +157,16 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 locals[n] = frame.get()?;
             },
+            Opcode::LoadGlobalN => {
+                let n = n1 as usize;
+                if n >= self.globals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
+                frame.put(self.globals[n])?;
+            },
+            Opcode::StoreGlobalN => {
+                let n = n1 as usize;
+                if n >= self.globals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
+                self.globals[n] = frame.get()?;
+            },
             Opcode::Unary => {
                 let v = frame.get()?;
                 let op = Unary::from_usize(n1 as usize);
@@ -161,6 +181,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(n1 as usize));
             },
+
+
 
             Opcode::LoadSlot => {
 
