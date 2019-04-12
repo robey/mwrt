@@ -164,5 +164,52 @@ mod tests {
             b.to_str(),
             "0000: NEW #1048576, #1048577\n"
         );
+
+        let bytes: &[u8] = &[
+            Opcode::Unary as u8, 0,
+            Opcode::Unary as u8, 2,
+            Opcode::Unary as u8, 4,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: NOT\n0002: NEG\n0004: INV\n"
+        );
+
+        let bytes: &[u8] = &[
+            Opcode::Binary as u8, 0,
+            Opcode::Binary as u8, 2,
+            Opcode::Binary as u8, 4,
+            Opcode::Binary as u8, 6,
+            Opcode::Binary as u8, 8,
+            Opcode::Binary as u8, 10,
+            Opcode::Binary as u8, 12,
+            Opcode::Binary as u8, 14,
+            Opcode::Binary as u8, 16,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: ADD\n0002: SUB\n0004: MUL\n0006: DIV\n0008: MOD\n000a: EQ\n000c: LT\n000e: LE\n0010: OR\n"
+        );
+
+        let bytes: &[u8] = &[
+            Opcode::Binary as u8, 18,
+            Opcode::Binary as u8, 20,
+            Opcode::Binary as u8, 22,
+            Opcode::Binary as u8, 24,
+            Opcode::Binary as u8, 26,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: AND\n0002: XOR\n0004: LSL\n0006: LSR\n0008: ASR\n"
+        );
     }
 }
