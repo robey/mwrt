@@ -4,7 +4,7 @@ use mwgc::Heap;
 use crate::constant_pool::ConstantPool;
 use crate::decode_int::{decode_sint, decode_unaligned};
 use crate::error::{ErrorCode, RuntimeError, ToError};
-use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
+use crate::opcode::{Binary, FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
@@ -150,7 +150,13 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             Opcode::Unary => {
                 let v = frame.get()?;
                 let op = Unary::from_usize(n1 as usize);
-                frame.put(self.unary(op, v, frame)?)?;
+                frame.put(self.unary(op, v as isize, frame)? as usize)?;
+            },
+            Opcode::Binary => {
+                let v2 = frame.get()?;
+                let v1 = frame.get()?;
+                let op = Binary::from_usize(n1 as usize);
+                frame.put(self.binary(op, v1 as isize, v2 as isize, frame)? as usize)?;
             },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(n1 as usize));
@@ -275,16 +281,43 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     pub fn unary(
         &self,
         op: Unary,
-        n1: usize,
+        n1: isize,
         frame: &StackFrame<'rom, 'heap>
-    ) -> Result<usize, RuntimeError<'rom, 'heap>> {
+    ) -> Result<isize, RuntimeError<'rom, 'heap>> {
         match op {
             Unary::Not => Ok(if n1 == 0 { 1 } else { 0 }),
-            Unary::Negative => Ok(-(n1 as isize) as usize),
+            Unary::Negative => Ok(-n1),
             Unary::BitNot => Ok(!n1),
             _ => Err(frame.to_error(ErrorCode::UnknownOpcode)),
         }
     }
+
+    pub fn binary(
+        &self,
+        op: Binary,
+        n1: isize,
+        n2: isize,
+        frame: &StackFrame<'rom, 'heap>
+    ) -> Result<isize, RuntimeError<'rom, 'heap>> {
+        match op {
+            Binary::Add => Ok(n1.wrapping_add(n2)),
+            Binary::Subtract => Ok(n1.wrapping_sub(n2)),
+            Binary::Multiply => Ok(n1.wrapping_mul(n2)),
+            Binary::Divide => Ok(n1 / n2),
+            Binary::Modulo => Ok(n1 % n2),
+            Binary::Equals => Ok(if n1 == n2 { 1 } else { 0 }),
+            Binary::LessThan => Ok(if n1 < n2 { 1 } else { 0 }),
+            Binary::LessOrEqual => Ok(if n1 <= n2 { 1 } else { 0 }),
+            Binary::BitOr => Ok(n1 | n2),
+            Binary::BitAnd => Ok(n1 & n2),
+            Binary::BitXor => Ok(n1 ^ n2),
+            Binary::ShiftLeft => Ok(n1 << n2),
+            Binary::ShiftRight => Ok(((n1 as usize) >> n2) as isize),
+            Binary::SignShiftRight => Ok(n1 >> n2),
+            _ => Err(frame.to_error(ErrorCode::UnknownOpcode)),
+        }
+    }
+
 }
 
 

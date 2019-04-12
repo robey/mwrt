@@ -1,6 +1,6 @@
 use core::fmt;
 use crate::decode_int::decode_sint;
-use crate::opcode::{FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
+use crate::opcode::{Binary, FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
 
 pub struct Instruction {
     offset: usize,
@@ -29,8 +29,25 @@ impl fmt::Display for Instruction {
             Opcode::Unary => match Unary::from_usize(self.n1 as usize) {
                 Unary::Not => write!(f, "NOT"),
                 Unary::Negative => write!(f, "NEG"),
-                Unary::BitNot => write!(f, "BITNOT"),
+                Unary::BitNot => write!(f, "INV"),
                 _ => write!(f, "?unary?"),
+            },
+            Opcode::Binary => match Binary::from_usize(self.n1 as usize) {
+                Binary::Add => write!(f, "ADD"),
+                Binary::Subtract => write!(f, "SUB"),
+                Binary::Multiply => write!(f, "MUL"),
+                Binary::Divide => write!(f, "DIV"),
+                Binary::Modulo => write!(f, "MOD"),
+                Binary::Equals => write!(f, "EQ"),
+                Binary::LessThan => write!(f, "LT"),
+                Binary::LessOrEqual => write!(f, "LE"),
+                Binary::BitOr => write!(f, "OR"),
+                Binary::BitAnd => write!(f, "AND"),
+                Binary::BitXor => write!(f, "XOR"),
+                Binary::ShiftLeft => write!(f, "LSL"),
+                Binary::ShiftRight => write!(f, "LSR"),
+                Binary::SignShiftRight => write!(f, "ASR"),
+                _ => write!(f, "?binary?"),
             },
             Opcode::ReturnN => write!(f, "RET #{}", self.n1),
             Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),

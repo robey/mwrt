@@ -17,6 +17,7 @@ pub enum Opcode {
     LoadLocalN = 0x14,                  // @N1 -> S1
     StoreLocalN = 0x15,                 // S1 -> @N1
     Unary = 0x1d,
+    Binary = 0x1e,
     ReturnN = 0x1f,                     // return N1 items from stack
     NewNN = 0x20,                       // N1(slots) N2(fill) -> obj S1
     Unknown = 0xff,
@@ -46,6 +47,33 @@ pub enum Unary {
 
 impl Unary {
     pub fn from_usize(n: usize) -> Unary {
+        unsafe { mem::transmute(n) }
+    }
+}
+
+
+#[repr(usize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Binary {
+    Add = 0,
+    Subtract = 1,
+    Multiply = 2,
+    Divide = 3,
+    Modulo = 4,
+    Equals = 5,
+    LessThan = 6,
+    LessOrEqual = 7,
+    BitOr = 8,
+    BitAnd = 9,
+    BitXor = 10,
+    ShiftLeft = 11,
+    ShiftRight = 12,
+    SignShiftRight = 13,
+    Unknown = 0xff,
+}
+
+impl Binary {
+    pub fn from_usize(n: usize) -> Binary {
         unsafe { mem::transmute(n) }
     }
 }

@@ -1,9 +1,23 @@
 mod helpers;
 
 use core::mem;
-use mwrt::{Opcode, Unary};
+use mwrt::{Binary, Opcode, Unary};
 use helpers::{Bytes, Platform};
 
+const BINARY_ADD: &[u8] = &[ Opcode::Binary as u8, (Binary::Add as u8) << 1 ];
+const BINARY_SUB: &[u8] = &[ Opcode::Binary as u8, (Binary::Subtract as u8) << 1 ];
+const BINARY_MUL: &[u8] = &[ Opcode::Binary as u8, (Binary::Multiply as u8) << 1 ];
+const BINARY_DIV: &[u8] = &[ Opcode::Binary as u8, (Binary::Divide as u8) << 1 ];
+const BINARY_MOD: &[u8] = &[ Opcode::Binary as u8, (Binary::Modulo as u8) << 1 ];
+const BINARY_EQ: &[u8] = &[ Opcode::Binary as u8, (Binary::Equals as u8) << 1 ];
+const BINARY_LT: &[u8] = &[ Opcode::Binary as u8, (Binary::LessThan as u8) << 1 ];
+const BINARY_LE: &[u8] = &[ Opcode::Binary as u8, (Binary::LessOrEqual as u8) << 1 ];
+const BINARY_OR: &[u8] = &[ Opcode::Binary as u8, (Binary::BitOr as u8) << 1 ];
+const BINARY_AND: &[u8] = &[ Opcode::Binary as u8, (Binary::BitAnd as u8) << 1 ];
+const BINARY_XOR: &[u8] = &[ Opcode::Binary as u8, (Binary::BitXor as u8) << 1 ];
+const BINARY_LSL: &[u8] = &[ Opcode::Binary as u8, (Binary::ShiftLeft as u8) << 1 ];
+const BINARY_LSR: &[u8] = &[ Opcode::Binary as u8, (Binary::ShiftRight as u8) << 1 ];
+const BINARY_ASR: &[u8] = &[ Opcode::Binary as u8, (Binary::SignShiftRight as u8) << 1 ];
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
 const LOAD_LOCAL_0: &[u8] = &[ Opcode::LoadLocalN as u8, 0 ];
@@ -11,9 +25,12 @@ const LOAD_LOCAL_1: &[u8] = &[ Opcode::LoadLocalN as u8, 2 ];
 const NEW: &[u8] = &[ Opcode::New as u8 ];
 const NEW_3_2: &[u8] = &[ Opcode::NewNN as u8, 6, 4 ];
 const NOP: &[u8] = &[ Opcode::Nop as u8 ];
+const PUSH_N30: &[u8] = &[ Opcode::Immediate as u8, 59 ];
+const PUSH_N1: &[u8] = &[ Opcode::Immediate as u8, 1 ];
 const PUSH_0: &[u8] = &[ Opcode::Immediate as u8, 0 ];
 const PUSH_1: &[u8] = &[ Opcode::Immediate as u8, 2 ];
 const PUSH_2: &[u8] = &[ Opcode::Immediate as u8, 4 ];
+const PUSH_30: &[u8] = &[ Opcode::Immediate as u8, 60 ];
 const PUSH_64: &[u8] = &[ Opcode::Immediate as u8, 0x80, 1 ];
 const PUSH_128: &[u8] = &[ Opcode::Immediate as u8, 0x80, 2 ];
 const PUSH_CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
@@ -197,6 +214,102 @@ fn unary() {
 
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, &[ Opcode::Unary as u8, 50 ], RETURN_1 ]) ]);
     assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(UnknownOpcode at [frame code=0 pc=2 sp=0])");
+}
+
+#[test]
+fn binary_math() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_ADD, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(158));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_N30, BINARY_ADD, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(98));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_SUB, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(98));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_N30, BINARY_SUB, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(158));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N30, PUSH_128, BINARY_SUB, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-158 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_MUL, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(3840));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_N30, BINARY_MUL, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-3840 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_DIV, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(4));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_MOD, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(8));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_1, PUSH_1, &[ Opcode::Binary as u8, 50 ], RETURN_1 ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(UnknownOpcode at [frame code=0 pc=4 sp=0])");
+}
+
+#[test]
+fn binary_compare() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_EQ, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_30, BINARY_EQ, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_LT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_LT, UNARY_NOT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_128, BINARY_LT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N30, PUSH_30, BINARY_LT, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_30, BINARY_LE, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_128, BINARY_LE, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+}
+
+#[test]
+fn binary_bit() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_OR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(158));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N1, PUSH_30, BINARY_OR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-1 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_AND, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(0));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N1, PUSH_30, BINARY_AND, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(30));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_128, PUSH_30, BINARY_XOR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(158));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N1, PUSH_30, BINARY_XOR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-31 as isize) as usize));
+}
+
+#[test]
+fn binary_shift() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_2, BINARY_LSL, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(120));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_2, BINARY_LSR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(7));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_N30, PUSH_2, BINARY_ASR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some((-8 as isize) as usize));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_2, BINARY_ASR, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(7));
 }
 
 // FIXME: error cases

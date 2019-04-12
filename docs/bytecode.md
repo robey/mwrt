@@ -65,7 +65,7 @@
     - store S1 into global #N1 `ST $n`
     - * store S2 into slot #N1 of S1 `ST [#n]`
     - * unary op #N1 on S1
-    - binary op #N1 on S1, S2
+    - * binary op #N1 on S1, S2
     - ~new obj: N1 slots, filling the first S1 from stack -> S1~
     - call function S1 with N1 args `CALL #n`
     - * return with N1 values `RET #n`
@@ -89,7 +89,7 @@
 - 4: % `MOD`
 - 5: = `EQ`
 - 6: < `LT`
-- 7: >= `GE`
+- 7: <= `LE`
 - 8: bit-or `OR`
 - 9: bit-and `AND`
 - a: bit-xor `XOR`
