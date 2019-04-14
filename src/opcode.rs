@@ -3,6 +3,7 @@ use core::mem;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Opcode {
+    // 0 immediates:
     Break = 0x00,
     Nop = 0x01,
     Dup = 0x02,                         // (probably only hand-crafted code/tests)
@@ -14,6 +15,8 @@ pub enum Opcode {
     LoadSlot = 0x08,                    // S1[S2] -> S1
     StoreSlot = 0x09,                   // S1[S2] := S3
     If = 0x0a,
+
+    // 1 immediate:
     Immediate = 0x10,                   // N1 -> S1
     Constant = 0x11,                    // addr(constant N1) -> S1,
     LoadSlotN = 0x12,                   // S1[N1] -> S1
@@ -22,11 +25,15 @@ pub enum Opcode {
     StoreLocalN = 0x15,                 // S1 -> @N1
     LoadGlobalN = 0x16,                 // $N1 -> S1
     StoreGlobalN = 0x17,                // S1 -> $N1
-    Unary = 0x1c,
-    Binary = 0x1d,
-    CallN = 0x1e,                       // call S1 with N1 args preceding
-    ReturnN = 0x1f,                     // return N1 items from stack
+    Unary = 0x18,
+    Binary = 0x19,
+    CallN = 0x1a,                       // call S1 with N1 args preceding
+    ReturnN = 0x1b,                     // return N1 items from stack
+    Jump = 0x1c,
+
+    // 2 immediates:
     NewNN = 0x20,                       // N1(slots) N2(fill) -> obj S1
+
     Unknown = 0xff,
 }
 

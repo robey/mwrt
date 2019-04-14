@@ -16,6 +16,7 @@ enum Disposition {
     Skip,           // skip next instruction
     Call(u16, usize),
     Return(usize),
+    Jump(u16),
 }
 
 
@@ -107,6 +108,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                             frame = previous;
                         }
                     }
+                },
+                Disposition::Jump(new_pc) => {
+                    if new_pc as usize >= frame.bytecode.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)); }
+                    frame.pc = new_pc;
                 }
             }
         }
@@ -222,6 +227,9 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(instruction.n1 as usize));
+            },
+            Opcode::Jump => {
+                return Ok(Disposition::Jump(instruction.n1 as u16));
             },
 
             // two immediates:

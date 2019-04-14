@@ -69,7 +69,7 @@
     - ~new obj: N1 slots, filling the first S1 from stack -> S1~
     - * call function S1 with N1 args `CALL #n`
     - * return with N1 values `RET #n`
-    - jump to absolute byte #N1 `JUMP #n`
+    - * jump to absolute byte #N1 `JUMP #n`
 - 2 immediates (2)
     - * new obj: N1 slots, filling the first N2 from stack -> S1 `NEW #n, #n`
     - call native module #N1, function #N2 `SYS #n, #n`
@@ -111,12 +111,14 @@
     - b[x] set
     - copy b[i..j] into c[k]
     - fill b[i..j] with x
-- strings
+- strings (byte arrays in utf8)
+- extended slot arrays
 - infinite ints
 
 ## extended arrays/strings
 
 - since an object can only have 64 slots
+    - call it 256 bytes for a string, which perfectly allows for a 1-byte length prefix, pascal-style
 - use indirection: an extended array has a size, capacity, and refs to spans of 64 slots
 
 

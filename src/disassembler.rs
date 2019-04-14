@@ -58,6 +58,7 @@ impl fmt::Display for Instruction {
             },
             Opcode::CallN => write!(f, "CALL #{}", self.n1),
             Opcode::ReturnN => write!(f, "RET #{}", self.n1),
+            Opcode::Jump => write!(f, "JUMP {:04x}", self.n1),
             Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),
             _ => write!(f, "???({:x})", self.opcode as u8),
         }
@@ -151,13 +152,14 @@ mod tests {
 
         let bytes: &[u8] = &[
             Opcode::Drop as u8, Opcode::StoreSlot as u8, Opcode::If as u8,
+            Opcode::Jump as u8, 0xfe, 7
         ];
         let mut buffer: [u8; 256] = [0; 256];
         let mut b = StringBuffer::new(&mut buffer);
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: DROP\n0001: ST [*]\n0002: IF\n"
+            "0000: DROP\n0001: ST [*]\n0002: IF\n0003: JUMP 01ff\n"
         );
 
         let bytes: &[u8] = &[

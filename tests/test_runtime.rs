@@ -61,6 +61,10 @@ const UNARY_NOT: &[u8] = &[ Opcode::Unary as u8, (Unary::Not as u8) << 1 ];
 const UNARY_NEG: &[u8] = &[ Opcode::Unary as u8, (Unary::Negative as u8) << 1 ];
 const UNARY_BITNOT: &[u8] = &[ Opcode::Unary as u8, (Unary::BitNot as u8) << 1 ];
 
+const fn jump(offset: u8) -> [u8; 2] {
+    [ Opcode::Jump as u8, offset << 1 ]
+}
+
 
 #[test]
 fn out_of_memory() {
@@ -389,5 +393,24 @@ fn conditional() {
     assert_eq!(p.execute1(0, &[]).ok(), Some(2));
 }
 
+#[test]
+fn jump_around() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ NUM_1, &jump(6), NUM_2, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(1));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ &jump(4), RETURN_1, NUM_30, &jump(2) ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(30));
+
+    // if/else
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ NUM_1, IF, &jump(9), NUM_30, RETURN_1, NUM_128, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(128));
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ NUM_0, IF, &jump(9), NUM_30, RETURN_1, NUM_128, RETURN_1 ]) ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(30));
+
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ &jump(9) ]) ]);
+    assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=0 sp=0])");
+}
 
 // FIXME: error cases
+
+// FIXME: maximum cycle count per code block
