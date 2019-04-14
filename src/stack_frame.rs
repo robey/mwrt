@@ -123,13 +123,17 @@ impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
         write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.id, self.pc, self.sp)?;
         if f.alternate() {
             write!(f, "{}", " L={ ")?;
-            for i in self.locals() { write!(f, "x{:x} ", i)?; }
+            for i in self.locals() { write!(f, "{:x} ", i)?; }
             write!(f, "{}", "} S={ ")?;
-            for i in self.stack() { write!(f, "x{:x} ", i)?; }
+            for i in self.stack() { write!(f, "{:x} ", i)?; }
             write!(f, "{}", "}")?;
         }
         if let Some(prev) = &self.previous {
-            write!(f, " -> {:?}", prev)?;
+            if f.alternate() {
+                write!(f, " -> {:#?}", prev)?;
+            } else {
+                write!(f, " -> {:?}", prev)?;
+            }
         }
         Ok(())
     }

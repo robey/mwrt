@@ -16,6 +16,7 @@ impl fmt::Display for Instruction {
             Opcode::Break => write!(f, "BREAK"),
             Opcode::Nop => write!(f, "NOP"),
             Opcode::Dup => write!(f, "DUP"),
+            Opcode::Call => write!(f, "CALL"),
             Opcode::Return => write!(f, "RET"),
             Opcode::New => write!(f, "NEW"),
             Opcode::Size => write!(f, "SIZE"),
@@ -51,6 +52,7 @@ impl fmt::Display for Instruction {
                 Binary::SignShiftRight => write!(f, "ASR"),
                 _ => write!(f, "?binary?"),
             },
+            Opcode::CallN => write!(f, "CALL #{}", self.n1),
             Opcode::ReturnN => write!(f, "RET #{}", self.n1),
             Opcode::NewNN => write!(f, "NEW #{}, #{}", self.n1, self.n2),
             _ => write!(f, "???({:x})", self.opcode as u8),
@@ -158,14 +160,15 @@ mod tests {
 
         let bytes: &[u8] = &[
             Opcode::NewNN as u8, 0x80, 0x80, 0x80, 1, 0x82, 0x80, 0x80, 1,
-            Opcode::LoadGlobalN as u8, 12, Opcode::StoreGlobalN as u8, 100,
+            Opcode::LoadGlobalN as u8, 12, Opcode::StoreGlobalN as u8, 100, Opcode::Call as u8,
+            Opcode::CallN as u8, 0x80, 1,
         ];
         let mut buffer: [u8; 256] = [0; 256];
         let mut b = StringBuffer::new(&mut buffer);
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: NEW #1048576, #1048577\n0009: LD $6\n000b: ST $50\n"
+            "0000: NEW #1048576, #1048577\n0009: LD $6\n000b: ST $50\n000d: CALL\n000e: CALL #64\n"
         );
 
         let bytes: &[u8] = &[

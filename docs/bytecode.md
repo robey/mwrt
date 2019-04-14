@@ -50,7 +50,7 @@
     - store S3 into slot #S2 of S1 `ST [*]`
     - if: execute next only if S1 is true `IF`
     - * new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
-    - call function S2 with S1 args `CALL`
+    - * call function S2 with S1 args `CALL`
     - * length (in slots) of S1 -> S1 `SIZE`
     - * return with S1 values `RET`
     - * do nothing `NOP`
@@ -67,7 +67,7 @@
     - * unary op #N1 on S1
     - * binary op #N1 on S1, S2
     - ~new obj: N1 slots, filling the first S1 from stack -> S1~
-    - call function S1 with N1 args `CALL #n`
+    - * call function S1 with N1 args `CALL #n`
     - * return with N1 values `RET #n`
     - jump to absolute byte #N1 `JUMP #n`
 - 2 immediates (2)
@@ -126,3 +126,8 @@
 // -                return Err(frame.to_error($code));
 // -            };
 // -        }
+
+
+## to-do
+
+- GC when out of memory

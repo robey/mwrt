@@ -67,15 +67,18 @@ impl Bytes {
 }
 
 
+const HEAP_SIZE: usize = 512;
+const CONSTANT_POOL_SIZE: usize = 256;
+
 pub struct Platform {
-    heap_data: [u8; 256],
-    constant_data: [u8; 256],
+    heap_data: [u8; HEAP_SIZE],
+    constant_data: [u8; CONSTANT_POOL_SIZE],
     constant_index: usize,
 }
 
 impl Platform {
     pub fn new() -> Platform {
-        Platform { heap_data: [0; 256], constant_data: [0; 256], constant_index: 0 }
+        Platform { heap_data: [0; HEAP_SIZE], constant_data: [0; CONSTANT_POOL_SIZE], constant_index: 0 }
     }
 
     pub fn with(constants: &[Bytes]) -> Platform {

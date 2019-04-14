@@ -19,6 +19,8 @@ const BINARY_LSL: &[u8] = &[ Opcode::Binary as u8, (Binary::ShiftLeft as u8) << 
 const BINARY_LSR: &[u8] = &[ Opcode::Binary as u8, (Binary::ShiftRight as u8) << 1 ];
 const BINARY_ASR: &[u8] = &[ Opcode::Binary as u8, (Binary::SignShiftRight as u8) << 1 ];
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
+const CALL: &[u8] = &[ Opcode::Call as u8 ];
+const CALL_1: &[u8] = &[ Opcode::CallN as u8, 2 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
 const LOAD_GLOBAL_0: &[u8] = &[ Opcode::LoadGlobalN as u8, 0 ];
 const LOAD_GLOBAL_1: &[u8] = &[ Opcode::LoadGlobalN as u8, 2 ];
@@ -331,5 +333,23 @@ fn binary_shift() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ PUSH_30, PUSH_2, BINARY_ASR, RETURN_1 ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(7));
 }
+
+#[test]
+fn call_double_and_return() {
+    let mut p = Platform::with(&[
+        Bytes::basic_code(&[ PUSH_30, PUSH_1, PUSH_1, CALL, PUSH_1, RETURN ]),
+        // double:
+        Bytes::basic_code(&[ LOAD_LOCAL_0, PUSH_2, BINARY_MUL, PUSH_1, RETURN ]),
+    ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(60));
+
+    let mut p = Platform::with(&[
+        Bytes::basic_code(&[ PUSH_30, PUSH_1, CALL_1, RETURN_1 ]),
+        // double:
+        Bytes::basic_code(&[ LOAD_LOCAL_0, PUSH_2, BINARY_MUL, RETURN_1 ]),
+    ]);
+    assert_eq!(p.execute1(0, &[]).ok(), Some(60));
+}
+
 
 // FIXME: error cases

@@ -9,9 +9,11 @@ use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
 // what to do after executing a bytecode
+#[derive(Debug)]
 enum Disposition {
     Continue(u16),  // keep going, possibly across a jump
     End,            // ran out of bytes
+    Call(u16, usize, u16),
     Return(usize),
 }
 
@@ -59,7 +61,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     pub fn execute(
         &mut self, code_index: u16, args: &[usize], results: &mut [usize]
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        let frame = self.frame_from_code(code_index, None, args)?;
+        let mut frame = self.frame_from_code(code_index, None, args)?;
         loop {
             let d = self.execute_one(frame)?;
             match d {
@@ -70,11 +72,25 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                     // ran out of bytecodes? nothing to return.
                     return Ok(0);
                 },
+                Disposition::Call(code_index, count, next_pc) => {
+                    frame.pc = next_pc;
+                    let args = frame.get_n(count)?;
+                    frame = self.frame_from_code(code_index, Some(frame), args)?;
+                },
                 Disposition::Return(count) => {
                     let stack_results = frame.get_n(count)?;
-                    let n: usize = if count < results.len() { count } else { results.len() };
-                    for i in 0 .. n { results[i] = stack_results[i] }
-                    return Ok(count);
+                    let previous = frame.previous.take();
+                    match previous {
+                        None => {
+                            let n: usize = if count < results.len() { count } else { results.len() };
+                            for i in 0 .. n { results[i] = stack_results[i] }
+                            return Ok(count);
+                        },
+                        Some(previous) => {
+                            for i in 0 .. count { previous.put(stack_results[i])?; }
+                            frame = previous;
+                        }
+                    }
                 }
             }
         }
@@ -113,6 +129,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let v = frame.get()?;
                 frame.put(v)?;
                 frame.put(v)?;
+            },
+            Opcode::Call => {
+                let count = frame.get()?;
+                let code_index = frame.get()? as u16;
+                return Ok(Disposition::Call(code_index, count, next_pc as u16));
             },
             Opcode::Return => {
                 let count = frame.get()?;
@@ -177,6 +198,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let v1 = frame.get()?;
                 let op = Binary::from_usize(n1 as usize);
                 frame.put(self.binary(op, v1 as isize, v2 as isize, frame)? as usize)?;
+            },
+            Opcode::CallN => {
+                let code_index = frame.get()? as u16;
+                return Ok(Disposition::Call(code_index, n1 as usize, next_pc as u16));
             },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(n1 as usize));

@@ -6,9 +6,10 @@ pub enum Opcode {
     Break = 0x00,
     Nop = 0x01,
     Dup = 0x02,                         // (probably only hand-crafted code/tests)
-    Return = 0x03,                      // return S1 items from stack
-    New = 0x04,                         // S1(slots) S2(fill) -> obj S1
-    Size = 0x05,                        // #slots(S1) -> S1
+    Call = 0x03,                        // call S2 with S1 args preceding
+    Return = 0x04,                      // return S1 items from stack
+    New = 0x05,                         // S1(slots) S2(fill) -> obj S1
+    Size = 0x06,                        // #slots(S1) -> S1
     LoadSlot = 0x08,                    // load slot #B from obj A -> A
     Immediate = 0x10,                   // N1 -> S1
     Constant = 0x11,                    // addr(constant N1) -> S1,
@@ -18,8 +19,9 @@ pub enum Opcode {
     StoreLocalN = 0x15,                 // S1 -> @N1
     LoadGlobalN = 0x16,                 // $N1 -> S1
     StoreGlobalN = 0x17,                // S1 -> $N1
-    Unary = 0x1d,
-    Binary = 0x1e,
+    Unary = 0x1c,
+    Binary = 0x1d,
+    CallN = 0x1e,                       // call S1 with N1 args preceding
     ReturnN = 0x1f,                     // return N1 items from stack
     NewNN = 0x20,                       // N1(slots) N2(fill) -> obj S1
     Unknown = 0xff,
