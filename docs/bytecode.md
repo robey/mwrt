@@ -46,9 +46,9 @@
 
 - stack vars are S1, S2... (left to right); immediates are N1, N2...
 - 0 immediates (9)
-    - load slot #S2 from S1 -> S1 `LD [*]`
-    - store S3 into slot #S2 of S1 `ST [*]`
-    - if: execute next only if S1 is true `IF`
+    - * load slot #S2 from S1 -> S1 `LD [*]`
+    - * store S3 into slot #S2 of S1 `ST [*]`
+    - * if: execute next only if S1 is true `IF`
     - * new obj: S1 slots, filling the first S2 from stack -> S1 `NEW`
     - * call function S2 with S1 args `CALL`
     - * length (in slots) of S1 -> S1 `SIZE`

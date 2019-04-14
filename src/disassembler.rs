@@ -1,12 +1,13 @@
 use core::fmt;
 use crate::decode_int::decode_sint;
+use crate::error::ErrorCode;
 use crate::opcode::{Binary, FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
 
 pub struct Instruction {
-    offset: usize,
-    opcode: Opcode,
-    n1: isize,
-    n2: isize,
+    pub offset: usize,
+    pub opcode: Opcode,
+    pub n1: isize,
+    pub n2: isize,
 }
 
 impl fmt::Display for Instruction {
@@ -16,11 +17,14 @@ impl fmt::Display for Instruction {
             Opcode::Break => write!(f, "BREAK"),
             Opcode::Nop => write!(f, "NOP"),
             Opcode::Dup => write!(f, "DUP"),
+            Opcode::Drop => write!(f, "DROP"),
             Opcode::Call => write!(f, "CALL"),
             Opcode::Return => write!(f, "RET"),
             Opcode::New => write!(f, "NEW"),
             Opcode::Size => write!(f, "SIZE"),
             Opcode::LoadSlot => write!(f, "LD [*]"),
+            Opcode::StoreSlot => write!(f, "ST [*]"),
+            Opcode::If => write!(f, "IF"),
             Opcode::Immediate => write!(f, "LD #{}", self.n1),
             Opcode::Constant => write!(f, "LD %{}", self.n1),
             Opcode::LoadSlotN => write!(f, "LD [#{}]", self.n1),
@@ -60,9 +64,6 @@ impl fmt::Display for Instruction {
     }
 }
 
-impl Instruction {
-}
-
 
 pub struct Disassembler<'a> {
     bytecode: &'a [u8],
@@ -74,10 +75,13 @@ impl<'a> Iterator for Disassembler<'a> {
 
     fn next(&mut self) -> Option<Instruction> {
         if self.index >= self.bytecode.len() { return None }
-        decode_next(self.bytecode, self.index).map(|(instruction, new_index)| {
+        match decode_next(self.bytecode, self.index).map(|(instruction, new_index)| {
             self.index = new_index;
             instruction
-        })
+        }) {
+            Ok(instruction) => Some(instruction),
+            Err(_) => None
+        }
     }
 }
 
@@ -92,8 +96,8 @@ pub fn disassemble_to_string<W: fmt::Write>(bytes: &[u8], f: &mut W) -> fmt::Res
     Ok(())
 }
 
-pub fn decode_next(bytes: &[u8], index: usize) -> Option<(Instruction, usize)> {
-    if index >= bytes.len() { return None }
+pub fn decode_next(bytes: &[u8], index: usize) -> Result<(Instruction, usize), ErrorCode> {
+    if index >= bytes.len() { return Err(ErrorCode::TruncatedCode) }
 
     let mut i = index;
     let instruction = bytes[i];
@@ -111,16 +115,16 @@ pub fn decode_next(bytes: &[u8], index: usize) -> Option<(Instruction, usize)> {
                     n2 = d2.value;
                     i = d2.new_index;
                 } else {
-                    return None;
+                    return Err(ErrorCode::TruncatedCode);
                 }
             }
         } else {
-            return None;
+            return Err(ErrorCode::TruncatedCode);
         }
     }
 
     let instruction = Instruction { opcode: Opcode::from_u8(instruction), n1, n2, offset: index };
-    Some((instruction, i))
+    Ok((instruction, i))
 }
 
 
@@ -143,6 +147,17 @@ mod tests {
         assert_eq!(
             b.to_str(),
             "0000: BREAK\n0001: NOP\n0002: RET\n0003: LD [*]\n0004: LD #1\n0006: LD %128\n0009: LD [#257]\n"
+        );
+
+        let bytes: &[u8] = &[
+            Opcode::Drop as u8, Opcode::StoreSlot as u8, Opcode::If as u8,
+        ];
+        let mut buffer: [u8; 256] = [0; 256];
+        let mut b = StringBuffer::new(&mut buffer);
+        disassemble_to_string(&bytes, &mut b).ok();
+        assert_eq!(
+            b.to_str(),
+            "0000: DROP\n0001: ST [*]\n0002: IF\n"
         );
 
         let bytes: &[u8] = &[

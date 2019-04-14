@@ -2,18 +2,19 @@ use core::{fmt, mem};
 use mwgc::Heap;
 
 use crate::constant_pool::ConstantPool;
-use crate::decode_int::{decode_sint, decode_unaligned};
+use crate::decode_int::{decode_unaligned};
+use crate::disassembler::{decode_next, Instruction};
 use crate::error::{ErrorCode, RuntimeError, ToError};
-use crate::opcode::{Binary, FIRST_N1_OPCODE, FIRST_N2_OPCODE, LAST_N_OPCODE, Opcode, Unary};
+use crate::opcode::{Binary, Opcode, Unary};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
 // what to do after executing a bytecode
 #[derive(Debug)]
 enum Disposition {
-    Continue(u16),  // keep going, possibly across a jump
-    End,            // ran out of bytes
-    Call(u16, usize, u16),
+    Continue,       // keep going, possibly across a jump
+    Skip,           // skip next instruction
+    Call(u16, usize),
     Return(usize),
 }
 
@@ -62,18 +63,33 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         &mut self, code_index: u16, args: &[usize], results: &mut [usize]
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let mut frame = self.frame_from_code(code_index, None, args)?;
+        let mut skip = false;
+
         loop {
-            let d = self.execute_one(frame)?;
-            match d {
-                Disposition::Continue(next_pc) => {
-                    frame.pc = next_pc;
+            if frame.pc as usize == frame.bytecode.len() {
+                // ran out of bytecodes? nothing to return.
+                return Ok(0);
+            }
+
+            let (instruction, next_pc) = decode_next(frame.bytecode, frame.pc as usize).map_err(|e| frame.to_error(e))?;
+            if skip {
+                skip = false;
+                frame.pc = next_pc as u16;
+                continue;
+            }
+
+            // println!("-> {} {:#?}", instruction, frame);
+
+            match self.execute_one(instruction, frame)? {
+                Disposition::Continue => {
+                    frame.pc = next_pc as u16;
                 },
-                Disposition::End => {
-                    // ran out of bytecodes? nothing to return.
-                    return Ok(0);
+                Disposition::Skip => {
+                    frame.pc = next_pc as u16;
+                    skip = true;
                 },
-                Disposition::Call(code_index, count, next_pc) => {
-                    frame.pc = next_pc;
+                Disposition::Call(code_index, count) => {
+                    frame.pc = next_pc as u16;
                     let args = frame.get_n(count)?;
                     frame = self.frame_from_code(code_index, Some(frame), args)?;
                 },
@@ -96,27 +112,12 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         }
     }
 
-    fn execute_one(&mut self, frame: &mut StackFrame<'rom, 'heap>) -> Result<Disposition, RuntimeError<'rom, 'heap>> {
-        let mut next_pc = frame.pc as usize;
-        if next_pc >= frame.bytecode.len() { return Ok(Disposition::End) }
-        let instruction = frame.bytecode[next_pc];
-        next_pc += 1;
-
-        // immediates?
-        let mut n1: isize = 0;
-        let mut n2: isize = 0;
-        if instruction >= FIRST_N1_OPCODE && instruction < LAST_N_OPCODE {
-            let d1 = decode_sint(frame.bytecode, next_pc).ok_or_else(|| frame.to_error(ErrorCode::TruncatedCode))?;
-            n1 = d1.value;
-            next_pc = d1.new_index;
-            if instruction >= FIRST_N2_OPCODE {
-                let d2 = decode_sint(frame.bytecode, next_pc).ok_or_else(|| frame.to_error(ErrorCode::TruncatedCode))?;
-                n2 = d2.value;
-                next_pc = d2.new_index;
-            }
-        }
-
-        match Opcode::from_u8(instruction) {
+    fn execute_one(
+        &mut self,
+        instruction: Instruction,
+        frame: &mut StackFrame<'rom, 'heap>
+    ) -> Result<Disposition, RuntimeError<'rom, 'heap>> {
+        match instruction.opcode {
             // zero immediates:
 
             Opcode::Break => {
@@ -130,10 +131,13 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 frame.put(v)?;
                 frame.put(v)?;
             },
+            Opcode::Drop => {
+                frame.get()?;
+            },
             Opcode::Call => {
                 let count = frame.get()?;
                 let code_index = frame.get()? as u16;
-                return Ok(Disposition::Call(code_index, count, next_pc as u16));
+                return Ok(Disposition::Call(code_index, count));
             },
             Opcode::Return => {
                 let count = frame.get()?;
@@ -149,83 +153,90 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 let addr = frame.get()?;
                 frame.put(self.object_size(addr, frame)?)?;
             },
+            Opcode::LoadSlot => {
+                let slot = frame.get()?;
+                let v = self.load_slot(frame.get()?, slot, frame)?;
+                frame.put(v)?;
+            },
+            Opcode::StoreSlot => {
+                let v = frame.get()?;
+                let slot = frame.get()?;
+                self.store_slot(frame.get()?, slot, v, frame)?;
+            },
+            Opcode::If => {
+                if frame.get()? == 0 { return Ok(Disposition::Skip); }
+            },
 
             // one immediate:
 
             Opcode::Immediate => {
-                frame.put(n1 as usize)?;
+                frame.put(instruction.n1 as usize)?;
             },
             Opcode::Constant => {
-                frame.put(((n1 as usize) << 1) | 1)?;
+                frame.put(((instruction.n1 as usize) << 1) | 1)?;
             },
             Opcode::LoadSlotN => {
-                let v = self.load_slot(frame.get()?, n1 as usize, frame)?;
+                let v = self.load_slot(frame.get()?, instruction.n1 as usize, frame)?;
                 frame.put(v)?;
             },
             Opcode::StoreSlotN => {
                 let v = frame.get()?;
-                self.store_slot(frame.get()?, n1 as usize, v, frame)?;
+                self.store_slot(frame.get()?, instruction.n1 as usize, v, frame)?;
             },
             Opcode::LoadLocalN => {
                 let locals = frame.locals();
-                let n = n1 as usize;
+                let n = instruction.n1 as usize;
                 if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 frame.put(locals[n])?;
             },
             Opcode::StoreLocalN => {
                 let locals = frame.locals_mut();
-                let n = n1 as usize;
+                let n = instruction.n1 as usize;
                 if n >= locals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 locals[n] = frame.get()?;
             },
             Opcode::LoadGlobalN => {
-                let n = n1 as usize;
+                let n = instruction.n1 as usize;
                 if n >= self.globals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 frame.put(self.globals[n])?;
             },
             Opcode::StoreGlobalN => {
-                let n = n1 as usize;
+                let n = instruction.n1 as usize;
                 if n >= self.globals.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)) }
                 self.globals[n] = frame.get()?;
             },
             Opcode::Unary => {
                 let v = frame.get()?;
-                let op = Unary::from_usize(n1 as usize);
+                let op = Unary::from_usize(instruction.n1 as usize);
                 frame.put(self.unary(op, v as isize, frame)? as usize)?;
             },
             Opcode::Binary => {
                 let v2 = frame.get()?;
                 let v1 = frame.get()?;
-                let op = Binary::from_usize(n1 as usize);
+                let op = Binary::from_usize(instruction.n1 as usize);
                 frame.put(self.binary(op, v1 as isize, v2 as isize, frame)? as usize)?;
             },
             Opcode::CallN => {
                 let code_index = frame.get()? as u16;
-                return Ok(Disposition::Call(code_index, n1 as usize, next_pc as u16));
+                return Ok(Disposition::Call(code_index, instruction.n1 as usize));
             },
             Opcode::ReturnN => {
-                return Ok(Disposition::Return(n1 as usize));
-            },
-
-
-
-            Opcode::LoadSlot => {
-
+                return Ok(Disposition::Return(instruction.n1 as usize));
             },
 
             // two immediates:
 
             Opcode::NewNN => {
-                let obj = self.new_object(n1 as usize, n2 as usize, frame)?;
+                let obj = self.new_object(instruction.n1 as usize, instruction.n2 as usize, frame)?;
                 frame.put(obj)?;
-            }
+            },
 
             _ => {
                 return Err(frame.to_error(ErrorCode::UnknownOpcode));
             }
         }
 
-        Ok(Disposition::Continue(next_pc as u16))
+        Ok(Disposition::Continue)
     }
 
     // look up a code object in the constant pool, allocate a new stack frame
