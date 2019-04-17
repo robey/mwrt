@@ -9,6 +9,12 @@ use crate::opcode::{Binary, Opcode, Unary};
 use crate::stack_frame::{StackFrame, StackFrameMutRef};
 
 
+// pub struct RuntimeOptions {
+//     pub global_count: usize,
+//     pub current_time: Option<fn() -> usize>,
+// }
+
+
 // what to do after executing a bytecode
 #[derive(Debug)]
 enum Disposition {
@@ -44,6 +50,7 @@ pub struct Runtime<'rom, 'heap> {
     pool: ConstantPool<'rom>,
     heap: Heap<'heap>,
     globals: &'heap mut [usize],
+    current_time: Option<fn() -> usize>,
 }
 
 impl<'rom, 'heap> Runtime<'rom, 'heap> {
@@ -51,25 +58,45 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         pool: ConstantPool<'rom>,
         heap_data: &'heap mut [u8],
         global_count: usize,
+        current_time: Option<fn() -> usize>,
     ) -> Result<Runtime<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
         let mut heap = Heap::from_bytes(heap_data);
         // just allocate the globals as a heap object
         let globals = heap.allocate_array::<usize>(global_count).ok_or_else(|| {
             RuntimeError::new(ErrorCode::OutOfMemory, None)
         })?;
-        Ok(Runtime { pool, heap, globals })
+        Ok(Runtime { pool, heap, globals, current_time })
     }
 
     pub fn execute(
-        &mut self, code_index: u16, args: &[usize], results: &mut [usize]
+        &mut self,
+        code_index: u16,
+        args: &[usize],
+        results: &mut [usize],
+        max_cyles: Option<core::num::NonZeroUsize>,
+        deadline: Option<core::num::NonZeroUsize>,
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let mut frame = self.frame_from_code(code_index, None, args)?;
         let mut skip = false;
+        let mut cycles = 0;
 
         loop {
             if frame.pc as usize == frame.bytecode.len() {
                 // ran out of bytecodes? nothing to return.
                 return Ok(0);
+            }
+
+            // outatime?
+            if let (Some(d), Some(t)) = (deadline, self.current_time) {
+                if t() >= d.get() {
+                    return Err(frame.to_error(ErrorCode::TimeExceeded));
+                }
+            }
+            if let Some(m) = max_cyles {
+                cycles += 1;
+                if cycles > m.get() {
+                    return Err(frame.to_error(ErrorCode::CyclesExceeded));
+                }
             }
 
             let (instruction, next_pc) = decode_next(frame.bytecode, frame.pc as usize).map_err(|e| frame.to_error(e))?;

@@ -1,6 +1,6 @@
 mod helpers;
 
-use core::mem;
+use core::{mem, num};
 use mwrt::{Binary, Opcode, Unary};
 use helpers::{Bytes, Platform};
 
@@ -409,6 +409,33 @@ fn jump_around() {
 
     let mut p = Platform::with(&[ Bytes::basic_code(&[ &jump(9) ]) ]);
     assert_eq!(format!("{:?}", p.execute1(0, &[])), "Err(OutOfBounds at [frame code=0 pc=0 sp=0])");
+}
+
+#[test]
+fn cycle_limit() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ &jump(0) ]) ]);
+    let mut results = [ 0 as usize; 4 ];
+    let rv = p.to_runtime().and_then(|mut r| r.execute(0, &[], &mut results, num::NonZeroUsize::new(1000), None));
+    assert_eq!(format!("{:?}", rv), "Err(CyclesExceeded at [frame code=0 pc=0 sp=0])");
+}
+
+static mut TIMER: usize = 0;
+fn current_time() -> usize {
+    unsafe {
+        TIMER += 1;
+        TIMER
+    }
+}
+
+#[test]
+fn time_limit() {
+    let mut p = Platform::with(&[ Bytes::basic_code(&[ &jump(0) ]) ]);
+    let mut results = [ 0 as usize; 4 ];
+
+    let rv = p.to_timed_runtime(Some(current_time)).and_then(|mut r| {
+        r.execute(0, &[], &mut results, None, num::NonZeroUsize::new(1000))
+    });
+    assert_eq!(format!("{:?}", rv), "Err(TimeExceeded at [frame code=0 pc=0 sp=0])");
 }
 
 // FIXME: error cases

@@ -17,6 +17,8 @@ pub enum ErrorCode {
 
     // these errors are resource constraints:
     OutOfMemory,
+    TimeExceeded,
+    CyclesExceeded,
 
     // these errors were invoked by your code object intentionally:
     Break,
