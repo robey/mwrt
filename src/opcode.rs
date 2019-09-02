@@ -10,7 +10,7 @@ pub enum Opcode {
     Drop = 0x03,                        // (probably only hand-crafted code/tests)
     Call = 0x04,                        // call S2 with S1 args preceding
     Return = 0x05,                      // return S1 items from stack
-    New = 0x06,                         // S1(slots) S2(fill) -> obj S1
+    New = 0x06,                         // S1(slots) S2(fill_from_stack) -> obj S1
     Size = 0x07,                        // #slots(S1) -> S1
     LoadSlot = 0x08,                    // S1[S2] -> S1
     StoreSlot = 0x09,                   // S1[S2] := S3

@@ -73,7 +73,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         code_index: u16,
         args: &[usize],
         results: &mut [usize],
-        max_cyles: Option<core::num::NonZeroUsize>,
+        max_cycles: Option<core::num::NonZeroUsize>,
         deadline: Option<core::num::NonZeroUsize>,
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
         let mut frame = self.frame_from_code(code_index, None, args)?;
@@ -92,7 +92,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                     return Err(frame.to_error(ErrorCode::TimeExceeded));
                 }
             }
-            if let Some(m) = max_cyles {
+            if let Some(m) = max_cycles {
                 cycles += 1;
                 if cycles > m.get() {
                     return Err(frame.to_error(ErrorCode::CyclesExceeded));

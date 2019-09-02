@@ -115,7 +115,6 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         locals[n] = value;
         Ok(())
     }
-
 }
 
 impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
