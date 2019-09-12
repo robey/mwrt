@@ -41,22 +41,10 @@ pub fn decode_sint(bytes: &[u8], index: usize) -> Option<DecodedInt> {
     decode_uint(bytes, index).map(|d| DecodedInt::new((d.value >> 1) ^ -(d.value & 1), d.new_index))
 }
 
-pub fn decode_unaligned(bytes: &[u8], index: usize) -> Option<DecodedInt> {
-    let end = index + mem::size_of::<usize>();
-    if end > bytes.len() { return None }
-    let mut rv: usize = 0;
-    let mut shift: usize = 0;
-    for i in index .. end {
-        rv |= (bytes[i] as usize) << shift;
-        shift += 8;
-    }
-    Some(DecodedInt::new(rv as isize, end))
-}
-
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_sint, decode_uint, decode_unaligned, DecodedInt};
+    use super::{decode_sint, decode_uint, DecodedInt};
 
     #[test]
     fn uint() {
@@ -92,15 +80,5 @@ mod tests {
         assert_eq!(decode_sint(&[ 0 ], 1), None);
         assert_eq!(decode_sint(&[ 0 ], 3), None);
         assert_eq!(decode_sint(&[ 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 1 ], 0), None);
-    }
-
-    #[test]
-    fn unaligned() {
-        assert_eq!(decode_unaligned(&[ 0 ], 0), None);
-        assert_eq!(decode_unaligned(&[ 0, 0, 0, 0, 0, 0, 0, 0 ], 0), Some(DecodedInt::new(0, 8)));
-        assert_eq!(decode_unaligned(&[ 1, 0, 0, 0, 0, 0, 0, 0 ], 0), Some(DecodedInt::new(1, 8)));
-        assert_eq!(decode_unaligned(&[ 255, 255, 255, 255, 255, 255, 255, 255 ], 0), Some(DecodedInt::new(-1, 8)));
-        assert_eq!(decode_unaligned(&[ 44, 1, 0, 0, 0, 0, 0, 0 ], 0), Some(DecodedInt::new(300, 8)));
-        assert_eq!(decode_unaligned(&[ 9, 9, 44, 1, 0, 0, 0, 0, 0, 0, 9 ], 2), Some(DecodedInt::new(300, 10)));
     }
 }

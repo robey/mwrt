@@ -68,14 +68,14 @@ impl fmt::Display for Instruction {
 
 pub struct Disassembler<'a> {
     bytecode: &'a [u8],
-    index: usize,
+    index: u16,
 }
 
 impl<'a> Iterator for Disassembler<'a> {
     type Item = Instruction;
 
     fn next(&mut self) -> Option<Instruction> {
-        if self.index >= self.bytecode.len() { return None }
+        if (self.index as usize) >= self.bytecode.len() { return None }
         match decode_next(self.bytecode, self.index).map(|(instruction, new_index)| {
             self.index = new_index;
             instruction
@@ -97,10 +97,9 @@ pub fn disassemble_to_string<W: fmt::Write>(bytes: &[u8], f: &mut W) -> fmt::Res
     Ok(())
 }
 
-pub fn decode_next(bytes: &[u8], index: usize) -> Result<(Instruction, usize), ErrorCode> {
-    if index >= bytes.len() { return Err(ErrorCode::TruncatedCode) }
-
-    let mut i = index;
+pub fn decode_next(bytes: &[u8], index: u16) -> Result<(Instruction, u16), ErrorCode> {
+    let mut i = index as usize;
+    if i >= bytes.len() { return Err(ErrorCode::TruncatedCode) }
     let instruction = bytes[i];
     i += 1;
 
@@ -124,8 +123,8 @@ pub fn decode_next(bytes: &[u8], index: usize) -> Result<(Instruction, usize), E
         }
     }
 
-    let instruction = Instruction { opcode: Opcode::from_u8(instruction), n1, n2, offset: index };
-    Ok((instruction, i))
+    let instruction = Instruction { opcode: Opcode::from_u8(instruction), n1, n2, offset: index as usize };
+    Ok((instruction, i as u16))
 }
 
 

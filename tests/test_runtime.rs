@@ -21,7 +21,7 @@ const BINARY_ASR: &[u8] = &[ Opcode::Binary as u8, (Binary::SignShiftRight as u8
 const BREAK: &[u8] = &[ Opcode::Break as u8 ];
 const CALL: &[u8] = &[ Opcode::Call as u8 ];
 const CALL_1: &[u8] = &[ Opcode::CallN as u8, 2 ];
-const CONST_1: &[u8] = &[ Opcode::Constant as u8, 2 ];
+const CONST_0: &[u8] = &[ Opcode::Constant as u8, 0 ];
 const DROP: &[u8] = &[ Opcode::Drop as u8 ];
 const DUP: &[u8] = &[ Opcode::Dup as u8 ];
 const IF: &[u8] = &[ Opcode::If as u8 ];
@@ -116,8 +116,8 @@ fn immediate_drop_and_return() {
 
 #[test]
 fn constant_and_return() {
-    let mut p = Platform::with(&[ Bytes::basic_code(&[ CONST_1, SLOT_0, NUM_1, RETURN ]), Bytes::constant(300) ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(300));
+    let mut p = Platform::with(&[ Bytes::constant(300), Bytes::basic_code(&[ CONST_0, SLOT_0, NUM_1, RETURN ]) ]);
+    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(300));
 }
 
 #[test]
@@ -196,28 +196,22 @@ fn new_object_and_store_slot() {
 #[test]
 fn constant_object_and_load_slot() {
     let mut p = Platform::with(&[
-        Bytes::basic_code(&[ CONST_1, SLOT_0, NUM_1, RETURN ]),
         Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0 ]),
+        Bytes::basic_code(&[ CONST_0, SLOT_0, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(5));
+    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(5));
 
     let mut p = Platform::with(&[
-        Bytes::basic_code(&[ CONST_1, SLOT_2, NUM_1, RETURN ]),
         Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0 ]),
+        Bytes::basic_code(&[ CONST_0, SLOT_2, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(6));
+    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(6));
 }
 
 #[test]
 fn object_size() {
     let mut p = Platform::with(&[ Bytes::basic_code(&[ NUM_128, NUM_2, NEW_3_2, SIZE, NUM_1, RETURN ]) ]);
     assert_eq!(p.execute1(0, &[]).ok(), Some(4));
-
-    let mut p = Platform::with(&[
-        Bytes::basic_code(&[ CONST_1, SIZE, NUM_1, RETURN ]),
-        Bytes::data(&[ 0, 0, 0, 0, 1, 0, 0, 0 ]),
-    ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(8 / mem::size_of::<usize>()));
 }
 
 #[test]
@@ -370,18 +364,18 @@ fn binary_shift() {
 #[test]
 fn call_double_and_return() {
     let mut p = Platform::with(&[
-        Bytes::basic_code(&[ NUM_30, NUM_1, NUM_1, CALL, NUM_1, RETURN ]),
         // double:
         Bytes::basic_code(&[ LOAD_LOCAL_0, NUM_2, BINARY_MUL, NUM_1, RETURN ]),
+        Bytes::basic_code(&[ NUM_30, NUM_0, NUM_1, CALL, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(60));
+    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(60));
 
     let mut p = Platform::with(&[
-        Bytes::basic_code(&[ NUM_30, NUM_1, CALL_1, RETURN_1 ]),
         // double:
         Bytes::basic_code(&[ LOAD_LOCAL_0, NUM_2, BINARY_MUL, RETURN_1 ]),
+        Bytes::basic_code(&[ NUM_30, NUM_0, CALL_1, RETURN_1 ]),
     ]);
-    assert_eq!(p.execute1(0, &[]).ok(), Some(60));
+    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(60));
 }
 
 #[test]

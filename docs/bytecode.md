@@ -37,10 +37,22 @@
 - code object:
     - u8: local count
     - u8: max stack size
+    - u16: length of bytecode
     - u8[...]: bytecode
 - each instruction is one byte, followed by optional (varint or zigzag) parameters
 - to get short-circuit or/and, use nested if
 - address of a constant is stored as `(c << 1) | 1`
+
+## constant pool
+
+- stored in rom (flash)
+- just a big blob of memory with an extent
+- opcode for turning a byte offset into a real pointer (24 -> constant_pool_base + 24)
+    - to save space, make all constant offsets & code offsets aligned, and stored as divide-by-4
+- bounds checking on read/write
+    - writes must be within heap
+    - reads must be within heap or constant pool
+    - both must be 32 (or 64) bit aligned
 
 ## bytecodes
 
@@ -57,7 +69,7 @@
     - * break into debugger `BREAK`
 - 1 immediate (13)
     - * load immediate N1 -> S1 `LD #n`
-    - * load address of const #N1 (as obj) -> S1 `LD %n` --- *maybe not necessary?*
+    - * load address of const at offset #N1 -> S1 `LD %n`
     - * load local #N1 -> S1 `LD @n`
     - * load global #N1 -> S1 `LD $n`
     - * load slot #N1 from S1 -> S1 `LD [#n]`

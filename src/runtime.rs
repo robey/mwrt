@@ -1,8 +1,6 @@
 use core::{fmt, mem};
 use mwgc::Heap;
 
-use crate::constant_pool::ConstantPool;
-use crate::decode_int::{decode_unaligned};
 use crate::disassembler::{decode_next, Instruction};
 use crate::error::{ErrorCode, RuntimeError, ToError};
 use crate::opcode::{Binary, Opcode, Unary};
@@ -20,34 +18,14 @@ use crate::stack_frame::{StackFrame, StackFrameMutRef};
 enum Disposition {
     Continue,       // keep going, possibly across a jump
     Skip,           // skip next instruction
-    Call(u16, usize),
+    Call(usize, usize),
     Return(usize),
     Jump(u16),
 }
 
 
-/// format of a code block:
-///   - u8: # of locals <= 63
-///   - u8: # of stack slots <= 63
-///   - bytecode
-struct Code<'rom> {
-    pub local_count: u8,
-    pub max_stack: u8,
-    pub bytecode: &'rom [u8],
-}
-
-impl<'rom> Code<'rom> {
-    pub fn from_data(data: &'rom [u8]) -> Option<Code<'rom>> {
-        if data.len() < 3 || data[0] > 63 || data[1] > 63 { return None }
-        let local_count = data[0];
-        let max_stack = data[1];
-        Some(Code { local_count, max_stack, bytecode: &data[2..] })
-    }
-}
-
-
 pub struct Runtime<'rom, 'heap> {
-    pool: ConstantPool<'rom>,
+    constant_pool: &'rom [u8],
     heap: Heap<'heap>,
     globals: &'heap mut [usize],
     current_time: Option<fn() -> usize>,
@@ -55,7 +33,7 @@ pub struct Runtime<'rom, 'heap> {
 
 impl<'rom, 'heap> Runtime<'rom, 'heap> {
     pub fn new(
-        pool: ConstantPool<'rom>,
+        constant_pool: &'rom [u8],
         heap_data: &'heap mut [u8],
         global_count: usize,
         current_time: Option<fn() -> usize>,
@@ -65,18 +43,18 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         let globals = heap.allocate_array::<usize>(global_count).ok_or_else(|| {
             RuntimeError::new(ErrorCode::OutOfMemory, None)
         })?;
-        Ok(Runtime { pool, heap, globals, current_time })
+        Ok(Runtime { constant_pool, heap, globals, current_time })
     }
 
     pub fn execute(
         &mut self,
-        code_index: u16,
+        offset: usize,
         args: &[usize],
         results: &mut [usize],
         max_cycles: Option<core::num::NonZeroUsize>,
         deadline: Option<core::num::NonZeroUsize>,
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        let mut frame = self.frame_from_code(code_index, None, args)?;
+        let mut frame = self.frame_from_code(offset, None, args)?;
         let mut skip = false;
         let mut cycles = 0;
 
@@ -99,10 +77,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 }
             }
 
-            let (instruction, next_pc) = decode_next(frame.bytecode, frame.pc as usize).map_err(|e| frame.to_error(e))?;
+            let (instruction, next_pc) = decode_next(frame.bytecode, frame.pc).map_err(|e| frame.to_error(e))?;
             if skip {
                 skip = false;
-                frame.pc = next_pc as u16;
+                frame.pc = next_pc;
                 continue;
             }
 
@@ -110,14 +88,14 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
 
             match self.execute_one(instruction, frame)? {
                 Disposition::Continue => {
-                    frame.pc = next_pc as u16;
+                    frame.pc = next_pc;
                 },
                 Disposition::Skip => {
-                    frame.pc = next_pc as u16;
+                    frame.pc = next_pc;
                     skip = true;
                 },
                 Disposition::Call(code_index, count) => {
-                    frame.pc = next_pc as u16;
+                    frame.pc = next_pc;
                     let args = frame.get_n(count)?;
                     frame = self.frame_from_code(code_index, Some(frame), args)?;
                 },
@@ -168,8 +146,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             },
             Opcode::Call => {
                 let count = frame.get()?;
-                let code_index = frame.get()? as u16;
-                return Ok(Disposition::Call(code_index, count));
+                let offset = frame.get()?;
+                return Ok(Disposition::Call(offset, count));
             },
             Opcode::Return => {
                 let count = frame.get()?;
@@ -205,7 +183,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 frame.put(instruction.n1 as usize)?;
             },
             Opcode::Constant => {
-                frame.put(((instruction.n1 as usize) << 1) | 1)?;
+                // must be aligned, so treat as 32-bits to save space.
+                frame.put((self.constant_pool.as_ptr() as usize) + ((instruction.n1 as usize) << 2))?;
             },
             Opcode::LoadSlotN => {
                 let v = self.load_slot(frame.get()?, instruction.n1 as usize, frame)?;
@@ -249,8 +228,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 frame.put(self.binary(op, v1 as isize, v2 as isize, frame)? as usize)?;
             },
             Opcode::CallN => {
-                let code_index = frame.get()? as u16;
-                return Ok(Disposition::Call(code_index, instruction.n1 as usize));
+                let offset = frame.get()?;
+                return Ok(Disposition::Call(offset, instruction.n1 as usize));
             },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(instruction.n1 as usize));
@@ -278,16 +257,24 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     // for it, and load the arguments into locals.
     pub fn frame_from_code(
         &mut self,
-        code_index: u16,
+        offset: usize,
         prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
         args: &[usize]
     ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
-        let code = self.pool.get(code_index as usize).and_then(|data| Code::from_data(data)).ok_or(
-            prev_frame.to_error(ErrorCode::InvalidCodeObject)
-        )?;
+        let addr = (self.constant_pool.as_ptr() as usize) + offset;
+
+        // header must be present and readable, to start with
+        let header = self.as_safe_constant(addr as *const [u8; 4]).map_err(|e| prev_frame.to_error(e))?;
+        if header[0] > 63 || header[1] > 63 { return Err(prev_frame.to_error(ErrorCode::InvalidCodeObject)) }
+        let local_count = header[0];
+        let max_stack = header[1];
+        // code block must also be valid
+        let len = (header[2] as usize) + ((header[3] as usize) << 8);
+        let bytecode = self.as_safe_constant_slice(addr + 4, len).map_err(|e| prev_frame.to_error(e))?;
 
         let mut frame = StackFrame::allocate(
-            &mut self.heap, code_index, code.local_count, code.max_stack, code.bytecode
+            // FIXME this id is jank.
+            &mut self.heap, (offset >> 2) as u16, local_count, max_stack, bytecode
         ).ok_or(
             prev_frame.to_error(ErrorCode::OutOfMemory)
         )?;
@@ -301,14 +288,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         addr: usize,
         frame: &StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        // an object might be serialized into the constant pool, so allow for either form.
-        if addr & 1 != 0 {
-            // constant pool address
-            let obj = self.pool.get(addr >> 1).ok_or_else(|| frame.to_error(ErrorCode::InvalidConstant))?;
-            Ok(obj.len() / mem::size_of::<usize>())
+        if self.heap.is_ptr_inside(addr as *const usize) {
+            Ok(self.heap.size_of_ptr(addr as *const usize) / mem::size_of::<usize>())
         } else {
-            // heap address, should be aligned
-            Ok(self.heap.size_of(unsafe { &*(addr as *const usize) }) / mem::size_of::<usize>())
+            // only valid for heap addresses
+            Err(frame.to_error(ErrorCode::InvalidAddress))
         }
     }
 
@@ -318,23 +302,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         slot: usize,
         frame: &StackFrame<'rom, 'heap>
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        // an object might be serialized into the constant pool, so allow for either form.
-        if addr & 1 != 0 {
-            // constant pool address
-            let obj = self.pool.get(addr >> 1).ok_or_else(|| frame.to_error(ErrorCode::InvalidConstant))?;
-            let offset = slot * mem::size_of::<usize>();
-            decode_unaligned(obj, offset).map(|x| x.value as usize).ok_or_else(|| {
-                frame.to_error(ErrorCode::InvalidAddress)
-            })
-        } else {
-            // heap address, should be aligned
-            let slot_addr = addr + slot * mem::size_of::<usize>();
-            let slot_ref = unsafe { &*(slot_addr as *const usize) };
-            if slot_addr % mem::size_of::<usize>() != 0 || !self.heap.is_inside(slot_ref) {
-                return Err(frame.to_error(ErrorCode::InvalidAddress));
-            }
-            Ok(*slot_ref)
-        }
+        // must be aligned
+        let slot_addr = addr + slot * mem::size_of::<usize>();
+        if slot_addr % mem::size_of::<usize>() != 0 { return Err(frame.to_error(ErrorCode::Unaligned)) }
+        let slot = self.as_safe_constant(slot_addr as *const usize).map_err(|e| frame.to_error(e))?;
+        Ok(*slot)
     }
 
     pub fn store_slot(
@@ -344,15 +316,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         value: usize,
         frame: &StackFrame<'rom, 'heap>,
     ) -> Result<(), RuntimeError<'rom, 'heap>> {
-        // can't mutate a constant
-        if addr & 1 != 0 { return Err(frame.to_error(ErrorCode::InvalidAddress)); }
-        // heap address, should be aligned
+        // must be heap address, and aligned
         let slot_addr = addr + slot * mem::size_of::<usize>();
-        let slot_ref = unsafe { &mut *(slot_addr as *mut usize) };
-        if slot_addr % mem::size_of::<usize>() != 0 || !self.heap.is_inside(slot_ref) {
-            return Err(frame.to_error(ErrorCode::InvalidAddress));
-        }
-        *slot_ref = value;
+        if slot_addr % mem::size_of::<usize>() != 0 { return Err(frame.to_error(ErrorCode::Unaligned)) }
+        let obj = self.as_safe_heap_mut(slot_addr as *mut usize).map_err(|e| frame.to_error(e))?;
+        *obj = value;
         Ok(())
     }
 
@@ -411,11 +379,47 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         }
     }
 
+    // these helpers wrap unsafe operations by testing to make sure the
+    // requested memory is in either the heap or the constant pool first.
+
+    fn as_safe_constant<T>(&self, obj: *const T) -> Result<&'rom T, ErrorCode> {
+        // can be in constant pool or heap
+        if self.is_in_constant_pool(obj) || self.heap.is_ptr_inside(obj) {
+            Ok(unsafe { &*obj })
+        } else {
+            Err(ErrorCode::InvalidAddress)
+        }
+    }
+
+    fn as_safe_constant_slice(&self, addr: usize, len: usize) -> Result<&'rom [u8], ErrorCode> {
+        if self.is_in_constant_pool_range(addr, len) {
+            Ok(unsafe { core::slice::from_raw_parts(addr as *const u8, len) })
+        } else {
+            Err(ErrorCode::InvalidAddress)
+        }
+    }
+
+    fn as_safe_heap_mut<T>(&self, obj: *mut T) -> Result<&'heap mut T, ErrorCode> {
+        if self.heap.is_ptr_inside(obj) {
+            Ok(unsafe { &mut *obj })
+        } else {
+            Err(ErrorCode::InvalidAddress)
+        }
+    }
+
+    fn is_in_constant_pool<T>(&self, obj: *const T) -> bool {
+        self.is_in_constant_pool_range(obj as usize, mem::size_of::<T>())
+    }
+
+    fn is_in_constant_pool_range(&self, addr: usize, len: usize) -> bool {
+        let pool = self.constant_pool.as_ptr() as usize;
+        addr >= pool && addr + len <= pool + self.constant_pool.len()
+    }
 }
 
 
 impl<'rom, 'heap> fmt::Debug for Runtime<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Runtime(pool={:?}, heap={:?})", self.pool, self.heap)
+        write!(f, "Runtime(pool={:?}, heap={:?})", self.constant_pool, self.heap)
     }
 }
