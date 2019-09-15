@@ -18,7 +18,7 @@ pub enum Opcode {
 
     // 1 immediate:
     Immediate = 0x10,                   // N1 -> S1
-    Constant = 0x11,                    // addr(constant N1) -> S1,
+    Constant = 0x11,                    // addr(constant_pool + (N1 << 2)) -> S1,
     LoadSlotN = 0x12,                   // S1[N1] -> S1
     StoreSlotN = 0x13,                  // S1[N1] := S2
     LoadLocalN = 0x14,                  // @N1 -> S1

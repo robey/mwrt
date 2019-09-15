@@ -117,7 +117,7 @@ fn immediate_drop_and_return() {
 #[test]
 fn constant_and_return() {
     let mut p = Platform::with(&[ Bytes::constant(300), Bytes::basic_code(&[ CONST_0, SLOT_0, NUM_1, RETURN ]) ]);
-    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(300));
+    assert_eq!(p.execute1(p.get_constant(1), &[]).ok(), Some(300));
 }
 
 #[test]
@@ -199,13 +199,13 @@ fn constant_object_and_load_slot() {
         Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0 ]),
         Bytes::basic_code(&[ CONST_0, SLOT_0, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(5));
+    assert_eq!(p.execute1(p.get_constant(1), &[]).ok(), Some(5));
 
     let mut p = Platform::with(&[
         Bytes::data(&[ 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0 ]),
         Bytes::basic_code(&[ CONST_0, SLOT_2, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(6));
+    assert_eq!(p.execute1(p.get_constant(1), &[]).ok(), Some(6));
 }
 
 #[test]
@@ -366,16 +366,16 @@ fn call_double_and_return() {
     let mut p = Platform::with(&[
         // double:
         Bytes::basic_code(&[ LOAD_LOCAL_0, NUM_2, BINARY_MUL, NUM_1, RETURN ]),
-        Bytes::basic_code(&[ NUM_30, NUM_0, NUM_1, CALL, NUM_1, RETURN ]),
+        Bytes::basic_code(&[ NUM_30, CONST_0, NUM_1, CALL, NUM_1, RETURN ]),
     ]);
-    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(60));
+    assert_eq!(p.execute1(p.get_constant(1), &[]).ok(), Some(60));
 
     let mut p = Platform::with(&[
         // double:
         Bytes::basic_code(&[ LOAD_LOCAL_0, NUM_2, BINARY_MUL, RETURN_1 ]),
-        Bytes::basic_code(&[ NUM_30, NUM_0, CALL_1, RETURN_1 ]),
+        Bytes::basic_code(&[ NUM_30, CONST_0, CALL_1, RETURN_1 ]),
     ]);
-    assert_eq!(p.execute1(p.constant_offsets[1], &[]).ok(), Some(60));
+    assert_eq!(p.execute1(p.get_constant(1), &[]).ok(), Some(60));
 }
 
 #[test]

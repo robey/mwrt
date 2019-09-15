@@ -108,6 +108,10 @@ impl Platform {
         self.constant_index += data.len();
     }
 
+    pub fn get_constant(&self, index: usize) -> usize {
+        self.constant_offsets[index] >> 2
+    }
+
     pub fn to_runtime(&mut self) -> Result<Runtime, RuntimeError> {
         let pool = &self.constant_data[0 .. self.constant_index];
         Runtime::new(pool, &mut self.heap_data, DEFAULT_GLOBALS, None)

@@ -54,7 +54,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         max_cycles: Option<core::num::NonZeroUsize>,
         deadline: Option<core::num::NonZeroUsize>,
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        let mut frame = self.frame_from_code(offset, None, args)?;
+        let addr = (self.constant_pool.as_ptr() as usize) + (offset << 2);
+        let mut frame = self.frame_from_code(addr, None, args)?;
         let mut skip = false;
         let mut cycles = 0;
 
@@ -94,10 +95,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                     frame.pc = next_pc;
                     skip = true;
                 },
-                Disposition::Call(code_index, count) => {
+                Disposition::Call(addr, count) => {
                     frame.pc = next_pc;
                     let args = frame.get_n(count)?;
-                    frame = self.frame_from_code(code_index, Some(frame), args)?;
+                    frame = self.frame_from_code(addr, Some(frame), args)?;
                 },
                 Disposition::Return(count) => {
                     let stack_results = frame.get_n(count)?;
@@ -146,8 +147,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             },
             Opcode::Call => {
                 let count = frame.get()?;
-                let offset = frame.get()?;
-                return Ok(Disposition::Call(offset, count));
+                let addr = frame.get()?;
+                return Ok(Disposition::Call(addr, count));
             },
             Opcode::Return => {
                 let count = frame.get()?;
@@ -228,8 +229,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 frame.put(self.binary(op, v1 as isize, v2 as isize, frame)? as usize)?;
             },
             Opcode::CallN => {
-                let offset = frame.get()?;
-                return Ok(Disposition::Call(offset, instruction.n1 as usize));
+                let addr = frame.get()?;
+                return Ok(Disposition::Call(addr, instruction.n1 as usize));
             },
             Opcode::ReturnN => {
                 return Ok(Disposition::Return(instruction.n1 as usize));
@@ -257,11 +258,13 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
     // for it, and load the arguments into locals.
     pub fn frame_from_code(
         &mut self,
-        offset: usize,
+        addr: usize,
         prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
         args: &[usize]
     ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
-        let addr = (self.constant_pool.as_ptr() as usize) + offset;
+        if !self.is_in_constant_pool(addr as *const [u8; 4]) {
+            return Err(prev_frame.to_error(ErrorCode::InvalidAddress));
+        }
 
         // header must be present and readable, to start with
         let header = self.as_safe_constant(addr as *const [u8; 4]).map_err(|e| prev_frame.to_error(e))?;
@@ -272,9 +275,9 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         let len = (header[2] as usize) + ((header[3] as usize) << 8);
         let bytecode = self.as_safe_constant_slice(addr + 4, len).map_err(|e| prev_frame.to_error(e))?;
 
+        let offset = addr - (self.constant_pool.as_ptr() as usize);
         let mut frame = StackFrame::allocate(
-            // FIXME this id is jank.
-            &mut self.heap, (offset >> 2) as u16, local_count, max_stack, bytecode
+            &mut self.heap, offset, local_count, max_stack, bytecode
         ).ok_or(
             prev_frame.to_error(ErrorCode::OutOfMemory)
         )?;

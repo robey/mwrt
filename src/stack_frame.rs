@@ -9,12 +9,14 @@ use crate::error::{ErrorCode, RuntimeError, ToError};
 pub struct StackFrame<'rom, 'heap> {
     pub previous: Option<StackFrameMutRef<'rom, 'heap>>,
     // 64 bits that should end up as 1 or 2 words:
-    pub id: u16,
     pub pc: u16,
     pub sp: u8,
     pub local_count: u8,
     pub max_stack: u8,
-    _filler: u8,
+    // 24 bits to encode the offset (>> 2), so 26 bits = 64 MB of total code
+    pub id_high: u8,
+    pub id: u16,
+    // 2 words:
     pub bytecode: &'rom [u8],
     // local storage goes here, then the stack slots
 }
@@ -22,21 +24,22 @@ pub struct StackFrame<'rom, 'heap> {
 pub type StackFrameRef<'rom, 'heap> = &'heap StackFrame<'rom, 'heap>;
 pub type StackFrameMutRef<'rom, 'heap> = &'heap mut StackFrame<'rom, 'heap>;
 
-const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
+pub const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
 
 
 /// Execution state for a code block: a set of local variables and a "stack" for the expression engine
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
     pub fn allocate(
         heap: &mut Heap<'heap>,
-        id: u16,
+        offset: usize,
         local_count: u8,
         max_stack: u8,
         bytecode: &'rom [u8],
     ) -> Option<StackFrameMutRef<'rom, 'heap>> {
         let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
         heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
-            frame.id = id;
+            frame.id = ((offset >> 2) & 0xffff) as u16;
+            frame.id_high = ((offset >> 18) & 0xff) as u8;
             frame.local_count = local_count;
             frame.max_stack = max_stack;
             frame.bytecode = bytecode;
@@ -115,11 +118,15 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         locals[n] = value;
         Ok(())
     }
+
+    pub fn get_code_offset(&self) -> usize {
+        ((self.id_high as usize) << 18) + ((self.id as usize) << 2)
+    }
 }
 
 impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.id, self.pc, self.sp)?;
+        write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.get_code_offset(), self.pc, self.sp)?;
         if f.alternate() {
             write!(f, "{}", " L={ ")?;
             for i in self.locals() { write!(f, "{:x} ", i)?; }
@@ -160,7 +167,7 @@ impl<'rom, 'heap> ToError<'rom, 'heap> for Option<StackFrameMutRef<'rom, 'heap>>
 mod tests {
     use core::mem;
     use mwgc::Heap;
-    use super::{StackFrame};
+    use super::{StackFrame, FRAME_HEADER_WORDS};
 
     #[test]
     fn locals() {
@@ -212,5 +219,19 @@ mod tests {
         stack[1] = 19;
         assert_eq!(stack[0], 23);
         assert_eq!(stack[1], 19);
+    }
+
+    #[test]
+    fn allocation_size() {
+        assert_eq!(FRAME_HEADER_WORDS, if mem::size_of::<usize>() == 4 { 5 } else { 4 })
+    }
+
+    #[test]
+    fn id_encoding() {
+        let mut data: [u8; 256] = [0; 256];
+        let bytecode: [u8; 1] = [ 1 ];
+        let mut heap = Heap::from_bytes(&mut data);
+        let frame = StackFrame::allocate(&mut heap, 0xfedcb8, 2, 2, &bytecode[..]).unwrap();
+        assert_eq!(frame.get_code_offset(), 0xfedcb8);
     }
 }
