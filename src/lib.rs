@@ -1,5 +1,6 @@
 #![no_std]
 
+mod constant_pool;
 mod decode_int;
 mod disassembler;
 mod error;

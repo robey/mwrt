@@ -1,6 +1,6 @@
 mod helpers;
 
-use core::{mem, num};
+use core::{num};
 use mwrt::{Binary, Opcode, Unary};
 use helpers::{Bytes, Platform};
 

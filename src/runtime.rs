@@ -1,6 +1,7 @@
 use core::{fmt, mem};
 use mwgc::Heap;
 
+use crate::constant_pool::{ConstantPool};
 use crate::disassembler::{decode_next, Instruction};
 use crate::error::{ErrorCode, RuntimeError, ToError};
 use crate::opcode::{Binary, Opcode, Unary};
@@ -23,9 +24,18 @@ enum Disposition {
     Jump(u16),
 }
 
+// runtime context holds a stack frame reference, and a bytecode slice
+// reference, to save space in the stack frame.
+// (the bytecode slice can be recomputed from the stack frame when we
+// return.)
+struct RuntimeContext<'rom, 'heap> {
+    pub frame: StackFrameMutRef<'rom, 'heap>,
+    pub bytecode: &'rom [u8],
+}
+
 
 pub struct Runtime<'rom, 'heap> {
-    constant_pool: &'rom [u8],
+    constant_pool: ConstantPool<'rom>,
     heap: Heap<'heap>,
     globals: &'heap mut [usize],
     current_time: Option<fn() -> usize>,
@@ -33,11 +43,12 @@ pub struct Runtime<'rom, 'heap> {
 
 impl<'rom, 'heap> Runtime<'rom, 'heap> {
     pub fn new(
-        constant_pool: &'rom [u8],
+        constant_pool_data: &'rom [u8],
         heap_data: &'heap mut [u8],
         global_count: usize,
         current_time: Option<fn() -> usize>,
     ) -> Result<Runtime<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
+        let constant_pool = ConstantPool::new(constant_pool_data);
         let mut heap = Heap::from_bytes(heap_data);
         // just allocate the globals as a heap object
         let globals = heap.allocate_array::<usize>(global_count).ok_or_else(|| {
@@ -54,13 +65,12 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         max_cycles: Option<core::num::NonZeroUsize>,
         deadline: Option<core::num::NonZeroUsize>,
     ) -> Result<usize, RuntimeError<'rom, 'heap>> {
-        let addr = (self.constant_pool.as_ptr() as usize) + (offset << 2);
-        let mut frame = self.frame_from_code(addr, None, args)?;
+        let mut context = self.frame_from_code(self.constant_pool.addr_from_offset(offset), None, args)?;
         let mut skip = false;
         let mut cycles = 0;
 
         loop {
-            if frame.pc as usize == frame.bytecode.len() {
+            if context.frame.pc as usize == context.bytecode.len() {
                 // ran out of bytecodes? nothing to return.
                 return Ok(0);
             }
@@ -68,41 +78,42 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             // outatime?
             if let (Some(d), Some(t)) = (deadline, self.current_time) {
                 if t() >= d.get() {
-                    return Err(frame.to_error(ErrorCode::TimeExceeded));
+                    return Err(context.frame.to_error(ErrorCode::TimeExceeded));
                 }
             }
             if let Some(m) = max_cycles {
                 cycles += 1;
                 if cycles > m.get() {
-                    return Err(frame.to_error(ErrorCode::CyclesExceeded));
+                    return Err(context.frame.to_error(ErrorCode::CyclesExceeded));
                 }
             }
 
-            let (instruction, next_pc) = decode_next(frame.bytecode, frame.pc).map_err(|e| frame.to_error(e))?;
+            let (instruction, next_pc) =
+                decode_next(context.bytecode, context.frame.pc).map_err(|e| context.frame.to_error(e))?;
             if skip {
                 skip = false;
-                frame.pc = next_pc;
+                context.frame.pc = next_pc;
                 continue;
             }
 
             // println!("-> {} {:#?}", instruction, frame);
 
-            match self.execute_one(instruction, frame)? {
+            match self.execute_one(instruction, context.frame)? {
                 Disposition::Continue => {
-                    frame.pc = next_pc;
+                    context.frame.pc = next_pc;
                 },
                 Disposition::Skip => {
-                    frame.pc = next_pc;
+                    context.frame.pc = next_pc;
                     skip = true;
                 },
                 Disposition::Call(addr, count) => {
-                    frame.pc = next_pc;
-                    let args = frame.get_n(count)?;
-                    frame = self.frame_from_code(addr, Some(frame), args)?;
+                    context.frame.pc = next_pc;
+                    let args = context.frame.get_n(count)?;
+                    context = self.frame_from_code(addr, Some(context.frame), args)?;
                 },
                 Disposition::Return(count) => {
-                    let stack_results = frame.get_n(count)?;
-                    let previous = frame.previous.take();
+                    let stack_results = context.frame.get_n(count)?;
+                    let previous = context.frame.previous.take();
                     match previous {
                         None => {
                             let n: usize = if count < results.len() { count } else { results.len() };
@@ -111,13 +122,17 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                         },
                         Some(previous) => {
                             for i in 0 .. count { previous.put(stack_results[i])?; }
-                            frame = previous;
+                            let code_addr = self.constant_pool.addr_from_offset(previous.code_offset);
+                            let code = self.constant_pool.get_code(code_addr).map_err(|e| previous.to_error(e))?;
+                            context = RuntimeContext { frame: previous, bytecode: code.bytecode };
                         }
                     }
                 },
                 Disposition::Jump(new_pc) => {
-                    if new_pc as usize >= frame.bytecode.len() { return Err(frame.to_error(ErrorCode::OutOfBounds)); }
-                    frame.pc = new_pc;
+                    if new_pc as usize >= context.bytecode.len() {
+                        return Err(context.frame.to_error(ErrorCode::OutOfBounds));
+                    }
+                    context.frame.pc = new_pc;
                 }
             }
         }
@@ -184,8 +199,7 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
                 frame.put(instruction.n1 as usize)?;
             },
             Opcode::Constant => {
-                // must be aligned, so treat as 32-bits to save space.
-                frame.put((self.constant_pool.as_ptr() as usize) + ((instruction.n1 as usize) << 2))?;
+                frame.put(self.constant_pool.addr_from_offset(instruction.n1 as usize))?;
             },
             Opcode::LoadSlotN => {
                 let v = self.load_slot(frame.get()?, instruction.n1 as usize, frame)?;
@@ -256,37 +270,26 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
 
     // look up a code object in the constant pool, allocate a new stack frame
     // for it, and load the arguments into locals.
-    pub fn frame_from_code(
+    // return the new stack frame, and a slice representing the bytecode.
+    fn frame_from_code(
         &mut self,
         addr: usize,
         prev_frame: Option<StackFrameMutRef<'rom, 'heap>>,
         args: &[usize]
-    ) -> Result<StackFrameMutRef<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
-        if !self.is_in_constant_pool(addr as *const [u8; 4]) {
-            return Err(prev_frame.to_error(ErrorCode::InvalidAddress));
-        }
-
-        // header must be present and readable, to start with
-        let header = self.as_safe_constant(addr as *const [u8; 4]).map_err(|e| prev_frame.to_error(e))?;
-        if header[0] > 63 || header[1] > 63 { return Err(prev_frame.to_error(ErrorCode::InvalidCodeObject)) }
-        let local_count = header[0];
-        let max_stack = header[1];
-        // code block must also be valid
-        let len = (header[2] as usize) + ((header[3] as usize) << 8);
-        let bytecode = self.as_safe_constant_slice(addr + 4, len).map_err(|e| prev_frame.to_error(e))?;
-
-        let offset = addr - (self.constant_pool.as_ptr() as usize);
+    ) -> Result<RuntimeContext<'rom, 'heap>, RuntimeError<'rom, 'heap>> {
+        let code = self.constant_pool.get_code(addr).map_err(|e| prev_frame.to_error(e))?;
         let mut frame = StackFrame::allocate(
-            &mut self.heap, offset, local_count, max_stack, bytecode
+            &mut self.heap, self.constant_pool.offset_from_addr(addr), code.local_count, code.max_stack
         ).ok_or(
             prev_frame.to_error(ErrorCode::OutOfMemory)
         )?;
 
         frame.previous = prev_frame;
-        frame.start_locals(args).map(|_| frame)
+        frame.start_locals(args)?;
+        Ok(RuntimeContext { frame, bytecode: code.bytecode })
     }
 
-    pub fn object_size(
+     pub fn object_size(
         &self,
         addr: usize,
         frame: &StackFrame<'rom, 'heap>
@@ -308,7 +311,10 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         // must be aligned
         let slot_addr = addr + slot * mem::size_of::<usize>();
         if slot_addr % mem::size_of::<usize>() != 0 { return Err(frame.to_error(ErrorCode::Unaligned)) }
-        let slot = self.as_safe_constant(slot_addr as *const usize).map_err(|e| frame.to_error(e))?;
+        let slot_ptr = slot_addr as *const usize;
+        let slot = self.constant_pool.safe_ref(slot_ptr).or_else(|| {
+            self.heap.safe_ref(slot_ptr)
+        }).ok_or(frame.to_error(ErrorCode::InvalidAddress))?;
         Ok(*slot)
     }
 
@@ -322,7 +328,8 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
         // must be heap address, and aligned
         let slot_addr = addr + slot * mem::size_of::<usize>();
         if slot_addr % mem::size_of::<usize>() != 0 { return Err(frame.to_error(ErrorCode::Unaligned)) }
-        let obj = self.as_safe_heap_mut(slot_addr as *mut usize).map_err(|e| frame.to_error(e))?;
+        let slot_ptr = slot_addr as *mut usize;
+        let obj = self.heap.safe_ref_mut(slot_ptr).ok_or(frame.to_error(ErrorCode::InvalidAddress))?;
         *obj = value;
         Ok(())
     }
@@ -381,48 +388,11 @@ impl<'rom, 'heap> Runtime<'rom, 'heap> {
             _ => Err(frame.to_error(ErrorCode::UnknownOpcode)),
         }
     }
-
-    // these helpers wrap unsafe operations by testing to make sure the
-    // requested memory is in either the heap or the constant pool first.
-
-    fn as_safe_constant<T>(&self, obj: *const T) -> Result<&'rom T, ErrorCode> {
-        // can be in constant pool or heap
-        if self.is_in_constant_pool(obj) || self.heap.is_ptr_inside(obj) {
-            Ok(unsafe { &*obj })
-        } else {
-            Err(ErrorCode::InvalidAddress)
-        }
-    }
-
-    fn as_safe_constant_slice(&self, addr: usize, len: usize) -> Result<&'rom [u8], ErrorCode> {
-        if self.is_in_constant_pool_range(addr, len) {
-            Ok(unsafe { core::slice::from_raw_parts(addr as *const u8, len) })
-        } else {
-            Err(ErrorCode::InvalidAddress)
-        }
-    }
-
-    fn as_safe_heap_mut<T>(&self, obj: *mut T) -> Result<&'heap mut T, ErrorCode> {
-        if self.heap.is_ptr_inside(obj) {
-            Ok(unsafe { &mut *obj })
-        } else {
-            Err(ErrorCode::InvalidAddress)
-        }
-    }
-
-    fn is_in_constant_pool<T>(&self, obj: *const T) -> bool {
-        self.is_in_constant_pool_range(obj as usize, mem::size_of::<T>())
-    }
-
-    fn is_in_constant_pool_range(&self, addr: usize, len: usize) -> bool {
-        let pool = self.constant_pool.as_ptr() as usize;
-        addr >= pool && addr + len <= pool + self.constant_pool.len()
-    }
 }
 
 
 impl<'rom, 'heap> fmt::Debug for Runtime<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Runtime(pool={:?}, heap={:?})", self.constant_pool, self.heap)
+        write!(f, "Runtime(pool={:?}, heap={:?})", self.constant_pool.data, self.heap)
     }
 }

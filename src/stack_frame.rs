@@ -8,16 +8,14 @@ use crate::error::{ErrorCode, RuntimeError, ToError};
 #[repr(C)]
 pub struct StackFrame<'rom, 'heap> {
     pub previous: Option<StackFrameMutRef<'rom, 'heap>>,
+    pub code_offset: usize,
     // 64 bits that should end up as 1 or 2 words:
     pub pc: u16,
     pub sp: u8,
+    unused1: u8,
     pub local_count: u8,
     pub max_stack: u8,
-    // 24 bits to encode the offset (>> 2), so 26 bits = 64 MB of total code
-    pub id_high: u8,
-    pub id: u16,
-    // 2 words:
-    pub bytecode: &'rom [u8],
+    unused2: u16,
     // local storage goes here, then the stack slots
 }
 
@@ -31,18 +29,15 @@ pub const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_
 impl<'rom, 'heap> StackFrame<'rom, 'heap> {
     pub fn allocate(
         heap: &mut Heap<'heap>,
-        offset: usize,
+        code_offset: usize,
         local_count: u8,
         max_stack: u8,
-        bytecode: &'rom [u8],
     ) -> Option<StackFrameMutRef<'rom, 'heap>> {
         let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
         heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
-            frame.id = ((offset >> 2) & 0xffff) as u16;
-            frame.id_high = ((offset >> 18) & 0xff) as u8;
+            frame.code_offset = code_offset;
             frame.local_count = local_count;
             frame.max_stack = max_stack;
-            frame.bytecode = bytecode;
             frame
         })
     }
@@ -118,15 +113,11 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         locals[n] = value;
         Ok(())
     }
-
-    pub fn get_code_offset(&self) -> usize {
-        ((self.id_high as usize) << 18) + ((self.id as usize) << 2)
-    }
 }
 
 impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.get_code_offset(), self.pc, self.sp)?;
+        write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.code_offset, self.pc, self.sp)?;
         if f.alternate() {
             write!(f, "{}", " L={ ")?;
             for i in self.locals() { write!(f, "{:x} ", i)?; }
@@ -172,9 +163,8 @@ mod tests {
     #[test]
     fn locals() {
         let mut data: [u8; 256] = [0; 256];
-        let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 0).unwrap();
         let locals = frame.locals_mut();
 
         // make sure we allocated enough memory, and that everything is where we expect.
@@ -194,18 +184,16 @@ mod tests {
     #[should_panic(expected = "index out of bounds")]
     fn locals_boundaries() {
         let mut data: [u8; 256] = [0; 256];
-        let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 0, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 0).unwrap();
         frame.locals_mut()[2] = 1;
     }
 
     #[test]
     fn stack() {
         let mut data: [u8; 256] = [0; 256];
-        let bytecode: [u8; 1] = [ 1 ];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 2, &bytecode[..]).unwrap();
+        let frame = StackFrame::allocate(&mut heap, 0, 2, 2).unwrap();
         let stack = frame.stack_mut();
 
         // make sure we allocated enough memory, and that everything is where we expect.
@@ -223,15 +211,6 @@ mod tests {
 
     #[test]
     fn allocation_size() {
-        assert_eq!(FRAME_HEADER_WORDS, if mem::size_of::<usize>() == 4 { 5 } else { 4 })
-    }
-
-    #[test]
-    fn id_encoding() {
-        let mut data: [u8; 256] = [0; 256];
-        let bytecode: [u8; 1] = [ 1 ];
-        let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0xfedcb8, 2, 2, &bytecode[..]).unwrap();
-        assert_eq!(frame.get_code_offset(), 0xfedcb8);
+        assert_eq!(FRAME_HEADER_WORDS, if mem::size_of::<usize>() == 4 { 4 } else { 3 })
     }
 }
