@@ -145,3 +145,10 @@
 
 - GC when out of memory
 - call native function
+- your favorite 16 constants in the first 16 slots of the constant pool
+
+
+
+4 bits
+0 - 7
+8 - 15 = 10, 12, 14, 16; 20, 24, 28, 32

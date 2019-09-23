@@ -1,98 +1,155 @@
 use core::{fmt, mem, slice};
 use mwgc::Heap;
 
-use crate::error::{ErrorCode, RuntimeError, ToError};
+use crate::constant_pool::{Code, ConstantPool};
+use crate::error::{ErrorCode, RuntimeError};
 
-// actually dynamically sized.
+/// A stack frame as it exists on the runtime's heap, in a linked list back
+/// to the starting frame.
+/// It's actually dynamically sized, with a header (this struct), which
+/// should be either 2 (64-bit) or 3 (32-bit) words, followed by a set of
+/// local variables and a "stack" for the expression engine.
 #[derive(Default)]
 #[repr(C)]
-pub struct StackFrame<'rom, 'heap> {
-    pub previous: Option<StackFrameMutRef<'rom, 'heap>>,
-    pub code_offset: usize,
-    // 64 bits that should end up as 1 or 2 words:
+pub struct StackFrame {
+    // stored as a pointer into the heap:
+    pub up_frame: usize,
+    // offset into the constant pool:
+    pub code_offset: u32,
+    // 32 bits of other metadata:
     pub pc: u16,
     pub sp: u8,
     unused1: u8,
-    pub local_count: u8,
-    pub max_stack: u8,
-    unused2: u16,
     // local storage goes here, then the stack slots
 }
 
-pub type StackFrameRef<'rom, 'heap> = &'heap StackFrame<'rom, 'heap>;
-pub type StackFrameMutRef<'rom, 'heap> = &'heap mut StackFrame<'rom, 'heap>;
+/// Everything in the stack frame, plus the decoded Code object, which we can
+/// reconstruct each time we call or return from a function, so we don't need
+/// to waste heap space on it.
+pub struct RuntimeContext<'rom, 'heap> {
+    pub frame: &'heap mut StackFrame,
+    pub code: Code<'rom>,
+}
 
-pub const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
+pub enum PreviousContext<'rom, 'heap> {
+    Frame(RuntimeContext<'rom, 'heap>),
+    Done(&'heap [usize]),
+}
 
-
-/// Execution state for a code block: a set of local variables and a "stack" for the expression engine
-impl<'rom, 'heap> StackFrame<'rom, 'heap> {
-    pub fn allocate(
+impl<'rom, 'heap> RuntimeContext<'rom, 'heap> {
+    fn new(
+        constant_pool: &ConstantPool<'rom>,
         heap: &mut Heap<'heap>,
-        code_offset: usize,
-        local_count: u8,
-        max_stack: u8,
-    ) -> Option<StackFrameMutRef<'rom, 'heap>> {
-        let total = (local_count + max_stack) as usize * mem::size_of::<usize>();
-        heap.allocate_dynamic_object::<StackFrame>(total).map(|frame| {
-            frame.code_offset = code_offset;
-            frame.local_count = local_count;
-            frame.max_stack = max_stack;
-            frame
-        })
+        code_addr: usize,
+        up_frame: usize,
+    ) -> Result<RuntimeContext<'rom, 'heap>, ErrorCode> {
+        let code = constant_pool.get_code(code_addr)?;
+        let total = (code.local_count + code.max_stack) as usize * mem::size_of::<usize>();
+        let frame = heap.allocate_dynamic_object::<StackFrame>(total).ok_or(ErrorCode::OutOfMemory)?;
+        frame.up_frame = up_frame;
+        frame.code_offset = constant_pool.offset_from_addr(code_addr);
+        Ok(RuntimeContext { frame, code })
+    }
+
+    /// Allocate a new stack frame with no previous frame (this is the starting frame).
+    pub fn start(
+        constant_pool: &ConstantPool<'rom>,
+        heap: &mut Heap<'heap>,
+        code_addr: usize,
+    ) -> Result<RuntimeContext<'rom, 'heap>, ErrorCode> {
+        RuntimeContext::new(constant_pool, heap, code_addr, core::ptr::null::<StackFrame>() as usize)
+    }
+
+    /// Allocate a new stack frame that links back to this one.
+    pub fn push(
+        &mut self,
+        constant_pool: &ConstantPool<'rom>,
+        heap: &mut Heap<'heap>,
+        code_addr: usize,
+        arg_count: usize,
+    ) -> Result<RuntimeContext<'rom, 'heap>, ErrorCode> {
+        let args = self.get_n(arg_count)?;
+        let mut next = RuntimeContext::new(constant_pool, heap, code_addr, self.frame as *const StackFrame as usize)?;
+        next.start_locals(args)?;
+        Ok(next)
+    }
+
+    /// Drop this stack frame and return the previous one, if there was one.
+    pub fn pop(
+        &mut self,
+        constant_pool: &ConstantPool<'rom>,
+        heap: &Heap<'heap>,
+        return_count: usize,
+    ) -> Result<PreviousContext<'rom, 'heap>, ErrorCode> {
+        let return_values = self.get_n(return_count)?;
+
+        let ptr = self.frame.up_frame as *mut StackFrame;
+        if ptr.is_null() { return Ok(PreviousContext::Done(return_values)) }
+
+        // none of these should error out, since they worked on the way in
+        let frame = heap.safe_ref_mut(ptr).ok_or(ErrorCode::InvalidAddress)?;
+        let code_addr = constant_pool.addr_from_offset(frame.code_offset);
+        let code = constant_pool.get_code(code_addr)?;
+
+        let mut prev = RuntimeContext { frame, code };
+        prev.put_n(return_values)?;
+        Ok(PreviousContext::Frame(prev))
     }
 
     pub fn locals_mut(&mut self) -> &'heap mut [usize] {
-        let base = self as *mut StackFrame as *mut usize;
-        unsafe { slice::from_raw_parts_mut(base.offset(FRAME_HEADER_WORDS), self.local_count as usize) }
+        let base = self.frame as *mut StackFrame as *mut usize;
+        unsafe { slice::from_raw_parts_mut(base.offset(FRAME_HEADER_WORDS), self.code.local_count as usize) }
     }
 
     pub fn locals(&self) -> &'heap [usize] {
-        let base = self as *const StackFrame as *const usize;
-        unsafe { slice::from_raw_parts(base.offset(FRAME_HEADER_WORDS), self.local_count as usize) }
+        let base = self.frame as *const StackFrame as *const usize;
+        unsafe { slice::from_raw_parts(base.offset(FRAME_HEADER_WORDS), self.code.local_count as usize) }
     }
 
     pub fn stack_mut(&mut self) -> &'heap mut [usize] {
-        let base = self as *mut StackFrame as *mut usize;
-        let offset = FRAME_HEADER_WORDS + (self.local_count as isize);
-        unsafe { slice::from_raw_parts_mut(base.offset(offset), self.max_stack as usize) }
+        let base = self.frame as *mut StackFrame as *mut usize;
+        let offset = FRAME_HEADER_WORDS + (self.code.local_count as isize);
+        unsafe { slice::from_raw_parts_mut(base.offset(offset), self.code.max_stack as usize) }
     }
 
     pub fn stack(&self) -> &'heap [usize] {
-        let base = self as *const StackFrame as *const usize;
-        let offset = FRAME_HEADER_WORDS + (self.local_count as isize);
-        unsafe { slice::from_raw_parts(base.offset(offset), self.sp as usize) }
+        let base = self.frame as *const StackFrame as *const usize;
+        let offset = FRAME_HEADER_WORDS + (self.code.local_count as isize);
+        unsafe { slice::from_raw_parts(base.offset(offset), self.frame.sp as usize) }
     }
 
-    pub fn get(&mut self) -> Result<usize, RuntimeError<'rom, 'heap>> {
+    pub fn get(&mut self) -> Result<usize, ErrorCode> {
         let stack = self.stack();
-        if self.sp < 1 { return Err(self.to_error(ErrorCode::StackUnderflow)) }
-        self.sp -= 1;
-        Ok(stack[self.sp as usize])
+        if self.frame.sp < 1 { return Err(ErrorCode::StackUnderflow) }
+        self.frame.sp -= 1;
+        Ok(stack[self.frame.sp as usize])
     }
 
     // the last N things added to the stack
-    pub fn get_n(&mut self, n: usize) -> Result<&'heap [usize], RuntimeError<'rom, 'heap>> {
+    pub fn get_n(&mut self, n: usize) -> Result<&'heap [usize], ErrorCode> {
         let stack = self.stack();
-        if self.sp < (n as u8) { return Err(self.to_error(ErrorCode::StackUnderflow)) }
-        self.sp -= n as u8;
-        let start = self.sp as usize;
+        if self.frame.sp < (n as u8) { return Err(ErrorCode::StackUnderflow) }
+        self.frame.sp -= n as u8;
+        let start = self.frame.sp as usize;
         Ok(&stack[start .. start + n])
     }
 
-    pub fn put(&mut self, n: usize) -> Result<(), RuntimeError<'rom, 'heap>> {
+    pub fn put(&mut self, n: usize) -> Result<(), ErrorCode> {
         let stack = self.stack_mut();
-        if (self.sp as usize) >= stack.len() { return Err(self.to_error(ErrorCode::StackOverflow)) }
-        stack[self.sp as usize] = n;
-        self.sp += 1;
+        if (self.frame.sp as usize) >= stack.len() { return Err(ErrorCode::StackOverflow) }
+        stack[self.frame.sp as usize] = n;
+        self.frame.sp += 1;
         Ok(())
     }
 
-    pub fn start_locals(&mut self, values: &[usize]) -> Result<(), RuntimeError<'rom, 'heap>> {
+    pub fn put_n(&mut self, items: &'heap [usize]) -> Result<(), ErrorCode> {
+        for item in items.iter() { self.put(*item)? }
+        Ok(())
+    }
+
+    pub fn start_locals(&mut self, values: &[usize]) -> Result<(), ErrorCode> {
         let locals = self.locals_mut();
-        if values.len() > locals.len() {
-            return Err(self.to_error(ErrorCode::LocalsOverflow));
-        }
+        if values.len() > locals.len() { return Err(ErrorCode::LocalsOverflow) }
         for i in 0..values.len() { locals[i] = values[i] }
         Ok(())
     }
@@ -113,43 +170,22 @@ impl<'rom, 'heap> StackFrame<'rom, 'heap> {
         locals[n] = value;
         Ok(())
     }
+
+    pub fn to_error(&self, code: ErrorCode) -> RuntimeError {
+        RuntimeError::from(code, self)
+    }
 }
 
-impl<'rom, 'heap> fmt::Debug for StackFrame<'rom, 'heap> {
+pub const FRAME_HEADER_WORDS: isize = (mem::size_of::<StackFrame>() / mem::size_of::<usize>()) as isize;
+
+
+impl fmt::Debug for StackFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[frame code={:x} pc={:x} sp={:x}]", self.code_offset, self.pc, self.sp)?;
-        if f.alternate() {
-            write!(f, "{}", " L={ ")?;
-            for i in self.locals() { write!(f, "{:x} ", i)?; }
-            write!(f, "{}", "} S={ ")?;
-            for i in self.stack() { write!(f, "{:x} ", i)?; }
-            write!(f, "{}", "}")?;
-        }
-        if let Some(prev) = &self.previous {
-            if f.alternate() {
-                write!(f, " -> {:#?}", prev)?;
-            } else {
-                write!(f, " -> {:?}", prev)?;
-            }
+        if let Some(prev) = unsafe { (self.up_frame as *const StackFrame).as_ref() } {
+            write!(f, " -> {:?}", prev)?;
         }
         Ok(())
-    }
-}
-
-impl<'rom, 'heap> ToError<'rom, 'heap> for StackFrame<'rom, 'heap> {
-    // evil trickery:
-    // we "know" this is only called to create an error object and will soon
-    // become the only heap reference, but rust can't know that.
-    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
-        let frozen = unsafe { &*(self as *const StackFrame) };
-        RuntimeError::new(code, Some(frozen))
-    }
-}
-
-impl<'rom, 'heap> ToError<'rom, 'heap> for Option<StackFrameMutRef<'rom, 'heap>> {
-    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap> {
-        let frozen = self.as_ref().map(|f| unsafe { &*(*f as *const StackFrame) });
-        RuntimeError::new(code, frozen)
     }
 }
 
@@ -158,22 +194,27 @@ impl<'rom, 'heap> ToError<'rom, 'heap> for Option<StackFrameMutRef<'rom, 'heap>>
 mod tests {
     use core::mem;
     use mwgc::Heap;
-    use super::{StackFrame, FRAME_HEADER_WORDS};
+    use crate::constant_pool::ConstantPool;
+    use super::{FRAME_HEADER_WORDS, RuntimeContext, StackFrame};
 
     #[test]
     fn locals() {
         let mut data: [u8; 256] = [0; 256];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 0).unwrap();
-        let locals = frame.locals_mut();
+        let pool = ConstantPool::new(&[ 2, 0, 1, 0, 0 ]);
+        let mut context = RuntimeContext::start(&pool, &mut heap, pool.addr_from_offset(0)).unwrap();
+        let locals = context.locals_mut();
 
         // make sure we allocated enough memory, and that everything is where we expect.
         let heap_used = heap.get_stats().total_bytes - heap.get_stats().free_bytes;
         assert!(heap_used >= mem::size_of::<StackFrame>() + 2 * mem::size_of::<usize>());
-        assert_eq!(locals as *mut _ as *mut usize as usize, frame as *mut _ as usize + mem::size_of::<StackFrame>());
+        assert_eq!(
+            locals as *mut _ as *mut usize as usize,
+            context.frame as *mut _ as usize + mem::size_of::<StackFrame>()
+        );
         assert!(mem::size_of::<StackFrame>() % mem::size_of::<usize>() == 0);
 
-        assert_eq!(frame.local_count, 2);
+        assert_eq!(context.code.local_count, 2);
         locals[0] = 123456;
         locals[1] = 4;
         assert_eq!(locals[0], 123456);
@@ -185,24 +226,26 @@ mod tests {
     fn locals_boundaries() {
         let mut data: [u8; 256] = [0; 256];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 0).unwrap();
-        frame.locals_mut()[2] = 1;
+        let pool = ConstantPool::new(&[ 2, 0, 1, 0, 0 ]);
+        let mut context = RuntimeContext::start(&pool, &mut heap, pool.addr_from_offset(0)).unwrap();
+        context.locals_mut()[2] = 1;
     }
 
     #[test]
     fn stack() {
         let mut data: [u8; 256] = [0; 256];
         let mut heap = Heap::from_bytes(&mut data);
-        let frame = StackFrame::allocate(&mut heap, 0, 2, 2).unwrap();
-        let stack = frame.stack_mut();
+        let pool = ConstantPool::new(&[ 2, 2, 1, 0, 0 ]);
+        let mut context = RuntimeContext::start(&pool, &mut heap, pool.addr_from_offset(0)).unwrap();
+        let stack = context.stack_mut();
 
         // make sure we allocated enough memory, and that everything is where we expect.
         let heap_used = heap.get_stats().total_bytes - heap.get_stats().free_bytes;
         assert!(heap_used >= mem::size_of::<StackFrame>() + 4 * mem::size_of::<usize>());
         let offset = mem::size_of::<StackFrame>() + 2 * mem::size_of::<usize>();
-        assert_eq!(stack as *mut _ as *mut usize as usize, frame as *mut _ as usize + offset);
+        assert_eq!(stack as *mut _ as *mut usize as usize, context.frame as *mut _ as usize + offset);
 
-        assert_eq!(frame.sp, 0);
+        assert_eq!(context.frame.sp, 0);
         stack[0] = 23;
         stack[1] = 19;
         assert_eq!(stack[0], 23);
@@ -211,6 +254,6 @@ mod tests {
 
     #[test]
     fn allocation_size() {
-        assert_eq!(FRAME_HEADER_WORDS, if mem::size_of::<usize>() == 4 { 4 } else { 3 })
+        assert_eq!(FRAME_HEADER_WORDS, if mem::size_of::<usize>() == 4 { 3 } else { 2 })
     }
 }

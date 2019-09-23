@@ -2,17 +2,27 @@ use core::mem;
 
 use crate::error::{ErrorCode};
 
-/// Wrapper for a `&'rom [u8]` that provides functions to safely access
-/// small bits of its internals.
-pub struct ConstantPool<'rom> {
-    pub data: &'rom [u8],
-}
 
-// decoded code block metadata from the constant pool
+/// Decoded code block metadata from the constant pool. This is allocated on
+/// our (runtime) stack, so it needs to be relatively compact, but it won't
+/// be on the heap like the stack frame.
 pub struct Code<'rom> {
     pub local_count: u8,
     pub max_stack: u8,
     pub bytecode: &'rom [u8],
+}
+
+impl<'rom> Code<'rom> {
+    pub fn new(local_count: u8, max_stack: u8, bytecode: &'rom [u8]) -> Code<'rom> {
+        Code { local_count, max_stack, bytecode }
+    }
+}
+
+
+/// Wrapper for a `&'rom [u8]` that provides functions to safely access
+/// small bits of its internals.
+pub struct ConstantPool<'rom> {
+    pub data: &'rom [u8],
 }
 
 impl<'rom> ConstantPool<'rom> {
@@ -21,12 +31,12 @@ impl<'rom> ConstantPool<'rom> {
     }
 
     // offsets are always shifted 2 bits right
-    pub fn addr_from_offset(&self, offset: usize) -> usize {
-        (self.data.as_ptr() as usize) + (offset << 2)
+    pub fn addr_from_offset(&self, offset: u32) -> usize {
+        (self.data.as_ptr() as usize) + ((offset as usize) << 2)
     }
 
-    pub fn offset_from_addr(&self, addr: usize) -> usize {
-        (addr - (self.data.as_ptr() as usize)) >> 2
+    pub fn offset_from_addr(&self, addr: usize) -> u32 {
+        ((addr - (self.data.as_ptr() as usize)) >> 2) as u32
     }
 
     /// If this address points to a part of the constant pool that seems to

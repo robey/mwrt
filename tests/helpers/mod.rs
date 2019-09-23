@@ -77,7 +77,7 @@ pub struct Platform {
     heap_data: [u8; HEAP_SIZE],
     constant_data: [u8; CONSTANT_POOL_SIZE],
     constant_index: usize,
-    pub constant_offsets: [usize; 16],
+    pub constant_offsets: [u32; 16],
     constant_offsets_index: usize,
 }
 
@@ -87,7 +87,7 @@ impl Platform {
             heap_data: [0; HEAP_SIZE],
             constant_data: [0; CONSTANT_POOL_SIZE],
             constant_index: 0,
-            constant_offsets: [0; 16],
+            constant_offsets: [0u32; 16],
             constant_offsets_index: 0,
         }
     }
@@ -102,13 +102,13 @@ impl Platform {
         // align:
         let bits = mem::size_of::<usize>() - 1;
         self.constant_index = (self.constant_index + bits) & !bits;
-        self.constant_offsets[self.constant_offsets_index] = self.constant_index;
+        self.constant_offsets[self.constant_offsets_index] = self.constant_index as u32;
         self.constant_offsets_index += 1;
         for i in 0 .. data.len() { self.constant_data[self.constant_index + i] = data[i] }
         self.constant_index += data.len();
     }
 
-    pub fn get_constant(&self, index: usize) -> usize {
+    pub fn get_constant(&self, index: usize) -> u32 {
         self.constant_offsets[index] >> 2
     }
 
@@ -122,7 +122,7 @@ impl Platform {
         Runtime::new(pool, &mut self.heap_data, DEFAULT_GLOBALS, current_time)
     }
 
-    pub fn execute0(&mut self, code_index: usize, args: &[usize]) -> Result<(), RuntimeError> {
+    pub fn execute0(&mut self, code_index: u32, args: &[usize]) -> Result<(), RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().and_then(|mut r| r.execute(code_index, args, &mut results, None, None)).map(|count| {
             assert_eq!(count, 0);
@@ -130,7 +130,7 @@ impl Platform {
         })
     }
 
-    pub fn execute1(&mut self, code_index: usize, args: &[usize]) -> Result<usize, RuntimeError> {
+    pub fn execute1(&mut self, code_index: u32, args: &[usize]) -> Result<usize, RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().and_then(|mut r| r.execute(code_index, args, &mut results, None, None)).map(|count| {
             assert_eq!(count, 1);
@@ -138,7 +138,7 @@ impl Platform {
         })
     }
 
-    pub fn execute2(&mut self, code_index: usize, args: &[usize]) -> Result<(usize, usize), RuntimeError> {
+    pub fn execute2(&mut self, code_index: u32, args: &[usize]) -> Result<(usize, usize), RuntimeError> {
         let mut results: [usize; 16] = [ 0; 16 ];
         self.to_runtime().and_then(|mut r| r.execute(code_index, args, &mut results, None, None)).map(|count| {
             assert_eq!(count, 2);

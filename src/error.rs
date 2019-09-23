@@ -1,5 +1,5 @@
 use core::fmt;
-use crate::stack_frame::StackFrameRef;
+use crate::stack_frame::{RuntimeContext, StackFrame};
 
 #[derive(Debug, PartialEq)]
 pub enum ErrorCode {
@@ -24,21 +24,26 @@ pub enum ErrorCode {
     Break,
 }
 
-pub struct RuntimeError<'rom, 'heap> {
+pub struct RuntimeError {
     pub code: ErrorCode,
-    pub frame: Option<StackFrameRef<'rom, 'heap>>,
+    pub frame: *const StackFrame,
 }
 
-impl<'rom, 'heap> RuntimeError<'rom, 'heap> {
-    pub fn new(code: ErrorCode, frame: Option<StackFrameRef<'rom, 'heap>>) -> RuntimeError<'rom, 'heap> {
-        RuntimeError { code, frame }
+impl RuntimeError {
+    pub fn new(code: ErrorCode) -> RuntimeError {
+        RuntimeError { code, frame: core::ptr::null() }
+    }
+
+    pub fn from<'a, 'rom, 'heap>(code: ErrorCode, context: &'a RuntimeContext<'rom, 'heap>) -> RuntimeError {
+        RuntimeError { code, frame: context.frame as *const StackFrame }
     }
 }
 
-impl<'rom, 'heap> fmt::Debug for RuntimeError<'rom, 'heap> {
+// this is only safe if the heap is still around:
+impl<'heap> fmt::Debug for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.code)?;
-        if let Some(frame) = &self.frame {
+        if let Some(frame) = unsafe { self.frame.as_ref() } {
             if f.alternate() {
                 write!(f, " at {:#?}", frame)?;
             } else {
@@ -47,8 +52,4 @@ impl<'rom, 'heap> fmt::Debug for RuntimeError<'rom, 'heap> {
         }
         Ok(())
     }
-}
-
-pub trait ToError<'rom, 'heap> {
-    fn to_error(&self, code: ErrorCode) -> RuntimeError<'rom, 'heap>;
 }
