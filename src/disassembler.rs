@@ -22,13 +22,13 @@ impl fmt::Display for Instruction {
             Opcode::Return => write!(f, "RET"),
             Opcode::New => write!(f, "NEW"),
             Opcode::Size => write!(f, "SIZE"),
-            Opcode::LoadSlot => write!(f, "LD [*]"),
-            Opcode::StoreSlot => write!(f, "ST [*]"),
+            Opcode::LoadSlot => write!(f, "LDS"),
+            Opcode::StoreSlot => write!(f, "STS"),
             Opcode::If => write!(f, "IF"),
             Opcode::Immediate => write!(f, "LD #{}", self.n1),
-            Opcode::Constant => write!(f, "LD %{}", self.n1),
-            Opcode::LoadSlotN => write!(f, "LD [#{}]", self.n1),
-            Opcode::StoreSlotN => write!(f, "ST [#{}]", self.n1),
+            Opcode::Constant => write!(f, "LDC #{}", self.n1 << 2),
+            Opcode::LoadSlotN => write!(f, "LDS #{}", self.n1),
+            Opcode::StoreSlotN => write!(f, "STS #{}", self.n1),
             Opcode::LoadLocalN => write!(f, "LD @{}", self.n1),
             Opcode::StoreLocalN => write!(f, "ST @{}", self.n1),
             Opcode::LoadGlobalN => write!(f, "LD ${}", self.n1),
@@ -146,7 +146,7 @@ mod tests {
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: BREAK\n0001: NOP\n0002: RET\n0003: LD [*]\n0004: LD #1\n0006: LD %128\n0009: LD [#257]\n"
+            "0000: BREAK\n0001: NOP\n0002: RET\n0003: LDS\n0004: LD #1\n0006: LDC #512\n0009: LDS #257\n"
         );
 
         let bytes: &[u8] = &[
@@ -158,7 +158,7 @@ mod tests {
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: DROP\n0001: ST [*]\n0002: IF\n0003: JUMP 01ff\n"
+            "0000: DROP\n0001: STS\n0002: IF\n0003: JUMP 01ff\n"
         );
 
         let bytes: &[u8] = &[
@@ -171,7 +171,7 @@ mod tests {
         disassemble_to_string(&bytes, &mut b).ok();
         assert_eq!(
             b.to_str(),
-            "0000: DUP\n0001: NEW\n0002: SIZE\n0003: ST [#258]\n0006: LD @8192\n000a: ST @3\n000c: RET #1\n"
+            "0000: DUP\n0001: NEW\n0002: SIZE\n0003: STS #258\n0006: LD @8192\n000a: ST @3\n000c: RET #1\n"
         );
 
         let bytes: &[u8] = &[
